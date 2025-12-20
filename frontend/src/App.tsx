@@ -9,6 +9,7 @@ import './App.css';
 function App() {
   const { isConnected } = useStacks();
   const [listings, setListings] = useState<any[]>([]);
+  const [selectedListingId, setSelectedListingId] = useState<number | null>(null);
 
   // Mock listings for now - will be replaced with actual contract calls
   const mockListings = [
@@ -20,6 +21,27 @@ function App() {
       royaltyRecipient: 'SP3J75H6FYTCJJW5R0CHVGWDFN8JPZP3DD4DPJRSP',
     },
   ];
+
+  if (selectedListingId) {
+    return (
+      <div className="App">
+        <header style={{ 
+          padding: '20px', 
+          borderBottom: '1px solid #ddd',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}>
+          <h1>StackMart Marketplace</h1>
+          <WalletButton />
+        </header>
+        <ListingDetails 
+          listingId={selectedListingId} 
+          onClose={() => setSelectedListingId(null)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="App">
@@ -52,8 +74,9 @@ function App() {
                     alert('Please connect your wallet to buy');
                     return;
                   }
-                  alert(`Buying listing #${id} - Feature coming soon!`);
+                  setSelectedListingId(id);
                 }}
+                onViewDetails={(id) => setSelectedListingId(id)}
               />
             ))}
           </div>
