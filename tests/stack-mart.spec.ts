@@ -100,3 +100,47 @@ describe("stack-mart listings", () => {
   });
 });
 
+describe("stack-mart escrow flow", () => {
+  it("creates escrow when buying with escrow option", () => {
+    // Create listing
+    simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(5_000), Cl.uint(500), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    const buyerBefore = getStxBalance(buyer);
+
+    // Buy with escrow
+    const escrowPurchase = simnet.callPublicFn(
+      contractName,
+      "buy-listing-escrow",
+      [Cl.uint(1)],
+      buyer
+    );
+
+    expect(escrowPurchase.result).toBeOk(Cl.bool(true));
+
+    // Check escrow was created
+    const escrowStatus = simnet.callReadOnlyFn(
+      contractName,
+      "get-escrow-status",
+      [Cl.uint(1)],
+      deployer
+    );
+
+    expect(escrowStatus.result).toBeOk(
+      Cl.tuple({
+        buyer: Cl.principal(buyer),
+        amount: Cl.uint(5_000),
+        "created-at-block": Cl.uint(0),
+        state: Cl.stringAscii("pending"),
+        "timeout-block": Cl.uint(144),
+      })
+    );
+
+    // Buyer's balance should be reduced
+    expect(getStxBalance(buyer)).toBe(buyerBefore - 5_000n);
+  });
+});
