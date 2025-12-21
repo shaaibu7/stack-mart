@@ -43,9 +43,17 @@ Edit `ops/chainhooks/stack-mart-mainnet.yaml`:
 
 ### 3. Register Chainhooks
 
-Use Hiro Chainhooks service to register your chainhook:
+**Option A: Use the setup script (recommended)**
+```bash
+cd ops/chainhooks
+./setup.sh
+```
+
+**Option B: Manual registration**
 ```bash
 # Install chainhook CLI if needed
+cargo install --git https://github.com/hirosystems/chainhook.git chainhook-cli
+
 # Register the chainhook
 chainhook register ops/chainhooks/stack-mart-mainnet.yaml
 ```
