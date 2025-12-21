@@ -242,4 +242,45 @@ describe("stack-mart escrow flow", () => {
 
     expect(listing.result).toBeErr(Cl.uint(404));
   });
+
+  it("buyer can reject delivery", () => {
+    // Create listing
+    simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(3_000), Cl.uint(300), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    // Buy with escrow
+    simnet.callPublicFn(
+      contractName,
+      "buy-listing-escrow",
+      [Cl.uint(1)],
+      buyer
+    );
+
+    // Seller attests delivery
+    const deliveryHash = Cl.bufferFromHex("0000000000000000000000000000000000000000000000000000000000000003");
+    simnet.callPublicFn(
+      contractName,
+      "attest-delivery",
+      [Cl.uint(1), deliveryHash],
+      seller
+    );
+
+    // Buyer rejects delivery
+    const rejectResult = simnet.callPublicFn(
+      contractName,
+      "reject-delivery",
+      [Cl.uint(1), Cl.stringAscii("Item not as described")],
+      buyer
+    );
+
+    expect(rejectResult.result).toBeOk(Cl.bool(true));
+
+    // Check delivery attestation was marked as rejected
+    // Note: This would require a read-only function to check delivery status
+    // For now, we just verify the function succeeded
+  });
 });
