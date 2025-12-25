@@ -17,6 +17,24 @@ export const CreateListing = () => {
       return;
     }
 
+    // Validate inputs
+    const priceValidation = validatePrice(price);
+    if (!priceValidation.valid) {
+      alert(priceValidation.error);
+      return;
+    }
+
+    const bipsValidation = validateBasisPoints(royaltyBips, 1000);
+    if (!bipsValidation.valid) {
+      alert(bipsValidation.error);
+      return;
+    }
+
+    if (!validateStacksAddress(royaltyRecipient)) {
+      alert('Please enter a valid Stacks address (starts with SP or ST)');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       let userData;
