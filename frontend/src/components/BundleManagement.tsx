@@ -4,6 +4,8 @@ import { useContract } from '../hooks/useContract';
 import { makeContractCall, broadcastTransaction, AnchorMode, PostConditionMode, uintCV, listCV } from '@stacks/transactions';
 import { CONTRACT_ID } from '../config/contract';
 
+import { validateBasisPoints } from '../utils/validation';
+
 export const BundleManagement = () => {
   const { userSession, network, isConnected } = useStacks();
   const { getAllListings, getBundle } = useContract();
@@ -72,7 +74,7 @@ export const BundleManagement = () => {
         setIsSubmitting(false);
         return;
       }
-      
+
       if (!userData || !userData.appPrivateKey) {
         alert('Wallet not properly connected');
         setIsSubmitting(false);
@@ -128,7 +130,7 @@ export const BundleManagement = () => {
         setIsSubmitting(false);
         return;
       }
-      
+
       if (!userData || !userData.appPrivateKey) {
         alert('Wallet not properly connected');
         setIsSubmitting(false);
@@ -181,7 +183,7 @@ export const BundleManagement = () => {
   const calculateBundlePrice = (bundle: any) => {
     const listingIds = bundle['listing-ids']?.value || bundle['listing-ids'] || [];
     const discountBips = bundle['discount-bips']?.value || bundle['discount-bips'] || 0;
-    
+
     let totalPrice = 0;
     listingIds.forEach((id: any) => {
       const listing = listings.find(l => l.id === (id.value || id));
@@ -189,7 +191,7 @@ export const BundleManagement = () => {
         totalPrice += listing.price || 0;
       }
     });
-    
+
     const discount = (totalPrice * Number(discountBips)) / 10000;
     return totalPrice - discount;
   };
@@ -232,12 +234,12 @@ export const BundleManagement = () => {
 
             <div className="form-group">
               <label className="form-label">Select Listings ({selectedListings.length}/10)</label>
-              <div style={{ 
-                maxHeight: '300px', 
-                overflowY: 'auto', 
-                border: '1px solid #ddd', 
-                borderRadius: '4px', 
-                padding: '10px' 
+              <div style={{
+                maxHeight: '300px',
+                overflowY: 'auto',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                padding: '10px'
               }}>
                 {isLoading ? (
                   <p>Loading listings...</p>
@@ -313,7 +315,7 @@ export const BundleManagement = () => {
                     <div className="badge badge-success">
                       {discountPercent}% OFF
                     </div>
-                    
+
                     <div style={{ marginTop: '15px' }}>
                       <p><strong>Listings:</strong> {listingIds.length} items</p>
                       <p><strong>Discount:</strong> {discountPercent}%</p>

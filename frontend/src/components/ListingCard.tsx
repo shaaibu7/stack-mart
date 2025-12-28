@@ -36,7 +36,7 @@ export const ListingCard = ({ listing, onBuy, onViewDetails }: ListingCardProps)
           <span className="badge badge-info">NFT</span>
         )}
       </div>
-      
+
       <div className="card-body">
         <div style={{ marginBottom: '0.75rem' }}>
           <div style={{ fontSize: '0.875rem', color: 'var(--gray-500)', marginBottom: '0.25rem' }}>
@@ -60,23 +60,23 @@ export const ListingCard = ({ listing, onBuy, onViewDetails }: ListingCardProps)
         )}
 
         {(listing.licenseTerms || listing['license-terms']) && (
-          <div style={{ 
-            marginTop: '0.75rem', 
-            padding: '0.5rem', 
-            backgroundColor: 'var(--gray-50)', 
+          <div style={{
+            marginTop: '0.75rem',
+            padding: '0.5rem',
+            backgroundColor: 'var(--gray-50)',
             borderRadius: '0.375rem',
             fontSize: '0.875rem',
             color: 'var(--gray-600)'
           }}>
             <strong>License:</strong> {(listing.licenseTerms || listing['license-terms'])?.slice(0, 100)}
-            {(listing.licenseTerms || listing['license-terms'])?.length > 100 && '...'}
+            {((listing.licenseTerms || listing['license-terms'])?.length || 0) > 100 && '...'}
           </div>
         )}
       </div>
 
       <div className="card-footer">
         {onViewDetails && (
-          <button 
+          <button
             className="btn btn-outline btn-sm"
             onClick={() => onViewDetails(listing.id)}
             style={{ flex: 1 }}
@@ -85,7 +85,7 @@ export const ListingCard = ({ listing, onBuy, onViewDetails }: ListingCardProps)
           </button>
         )}
         {onBuy && (
-          <button 
+          <button
             className="btn btn-primary btn-sm"
             onClick={() => onBuy(listing.id)}
             style={{ flex: 1 }}

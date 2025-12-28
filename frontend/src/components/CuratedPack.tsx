@@ -3,7 +3,7 @@ import { useStacks } from '../hooks/useStacks';
 import { useContract } from '../hooks/useContract';
 import { makeContractCall, broadcastTransaction, AnchorMode, PostConditionMode, uintCV, principalCV, listCV } from '@stacks/transactions';
 import { CONTRACT_ID } from '../config/contract';
-import { validatePrice, formatSTX } from '../utils/validation';
+import { validatePrice } from '../utils/validation';
 
 export const CuratedPack = () => {
   const { userSession, network, isConnected, userData } = useStacks();
@@ -78,7 +78,7 @@ export const CuratedPack = () => {
         setIsSubmitting(false);
         return;
       }
-      
+
       if (!userData || !userData.appPrivateKey) {
         alert('Wallet not properly connected');
         setIsSubmitting(false);
@@ -138,7 +138,7 @@ export const CuratedPack = () => {
         setIsSubmitting(false);
         return;
       }
-      
+
       if (!userData || !userData.appPrivateKey) {
         alert('Wallet not properly connected');
         setIsSubmitting(false);
@@ -226,12 +226,12 @@ export const CuratedPack = () => {
 
             <div className="form-group">
               <label className="form-label">Select Listings ({selectedListings.length}/20)</label>
-              <div style={{ 
-                maxHeight: '300px', 
-                overflowY: 'auto', 
-                border: '1px solid #ddd', 
-                borderRadius: '4px', 
-                padding: '10px' 
+              <div style={{
+                maxHeight: '300px',
+                overflowY: 'auto',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                padding: '10px'
               }}>
                 {isLoading ? (
                   <p>Loading listings...</p>
@@ -306,7 +306,7 @@ export const CuratedPack = () => {
                     <div className="badge badge-info">
                       Curated Pack
                     </div>
-                    
+
                     <div style={{ marginTop: '15px' }}>
                       <p><strong>Listings:</strong> {listingIds.length} items</p>
                       <p><strong>Curator:</strong> <span style={{ fontFamily: 'monospace', fontSize: '0.9em' }}>{curator.slice(0, 10)}...</span></p>
