@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useStacks } from '../hooks/useStacks';
 import { makeContractCall, broadcastTransaction, AnchorMode, PostConditionMode, uintCV, principalCV } from '@stacks/transactions';
 import { CONTRACT_ID } from '../config/contract';
+import { TRANSACTION_FEE } from '../config/constants';
 import { validatePrice, validateBasisPoints, validateStacksAddress } from '../utils/validation';
 
 export const CreateListing = () => {
@@ -69,7 +70,7 @@ export const CreateListing = () => {
         network,
         anchorMode: AnchorMode.Any,
         postConditionMode: PostConditionMode.Allow,
-        fee: 150000,
+        fee: TRANSACTION_FEE,
       };
 
       const transaction = await makeContractCall(txOptions);

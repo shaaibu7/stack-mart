@@ -8,11 +8,12 @@ import { LoadingSkeleton } from './components/LoadingSkeleton';
 import { BundleManagement } from './components/BundleManagement';
 import { CuratedPack } from './components/CuratedPack';
 import { DisputeResolution } from './components/DisputeResolution';
+import { Dashboard } from './components/Dashboard';
 import { useStacks } from './hooks/useStacks';
 import { useContract } from './hooks/useContract';
 import './App.css';
 
-type TabType = 'listings' | 'bundles' | 'packs' | 'disputes';
+type TabType = 'listings' | 'bundles' | 'packs' | 'disputes' | 'dashboard';
 
 function App() {
   const { isConnected } = useStacks();
@@ -87,8 +88,8 @@ function App() {
           <h1>StackMart Marketplace</h1>
           <WalletButton />
         </header>
-        <ListingDetails 
-          listingId={selectedListingId} 
+        <ListingDetails
+          listingId={selectedListingId}
           onClose={() => setSelectedListingId(null)}
         />
       </div>
@@ -110,13 +111,20 @@ function App() {
         )}
 
         {/* Tab Navigation */}
-        <div style={{ 
-          display: 'flex', 
-          gap: '10px', 
+        <div style={{
+          display: 'flex',
+          gap: '10px',
           marginBottom: '2rem',
           borderBottom: '2px solid var(--gray-200)',
           paddingBottom: '10px'
         }}>
+          <button
+            className={`btn ${activeTab === 'dashboard' ? 'btn-primary' : 'btn-outline'}`}
+            onClick={() => setActiveTab('dashboard')}
+            style={{ borderRadius: '8px 8px 0 0' }}
+          >
+            👤 Dashboard
+          </button>
           <button
             className={`btn ${activeTab === 'listings' ? 'btn-primary' : 'btn-outline'}`}
             onClick={() => setActiveTab('listings')}
@@ -173,18 +181,18 @@ function App() {
                   )}
                 </button>
               </div>
-              
+
               {isLoadingListings ? (
-                <div className="grid grid-cols-1" style={{ 
+                <div className="grid grid-cols-1" style={{
                   gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
                   gap: '1.5rem'
                 }}>
                   <LoadingSkeleton count={6} />
                 </div>
               ) : listings.length === 0 ? (
-                <div style={{ 
-                  textAlign: 'center', 
-                  padding: '3rem', 
+                <div style={{
+                  textAlign: 'center',
+                  padding: '3rem',
                   color: 'var(--gray-500)',
                   backgroundColor: 'var(--gray-50)',
                   borderRadius: 'var(--radius-lg)'
@@ -194,13 +202,13 @@ function App() {
                   <p>Be the first to create a listing!</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1" style={{ 
+                <div className="grid grid-cols-1" style={{
                   gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
                   gap: '1.5rem'
                 }}>
                   {listings.map((listing) => (
-                    <ListingCard 
-                      key={listing.id} 
+                    <ListingCard
+                      key={listing.id}
                       listing={listing}
                       onBuy={(id) => {
                         if (!isConnected) {
@@ -249,7 +257,7 @@ function App() {
               </div>
             </div>
             {disputeEscrowId && (
-              <DisputeResolution 
+              <DisputeResolution
                 listingId={disputeEscrowId}
                 escrowId={disputeEscrowId}
               />
@@ -262,6 +270,10 @@ function App() {
               </div>
             )}
           </section>
+        )}
+
+        {activeTab === 'dashboard' && (
+          <Dashboard />
         )}
 
         <section>
