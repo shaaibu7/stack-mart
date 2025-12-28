@@ -5,6 +5,8 @@ import { makeContractCall, broadcastTransaction, AnchorMode, PostConditionMode, 
 import { CONTRACT_ID } from '../config/contract';
 import { TRANSACTION_FEE } from '../config/constants';
 
+import { validateBasisPoints } from '../utils/validation';
+
 export const BundleManagement = () => {
   const { userSession, network, isConnected } = useStacks();
   const { getAllListings, getBundle } = useContract();

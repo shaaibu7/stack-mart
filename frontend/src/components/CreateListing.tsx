@@ -4,6 +4,8 @@ import { makeContractCall, broadcastTransaction, AnchorMode, PostConditionMode, 
 import { CONTRACT_ID } from '../config/contract';
 import { TRANSACTION_FEE } from '../config/constants';
 
+import { validatePrice, validateBasisPoints, validateStacksAddress } from '../utils/validation';
+
 export const CreateListing = () => {
   const { userSession, network, isConnected } = useStacks();
   const [price, setPrice] = useState('');
@@ -46,7 +48,7 @@ export const CreateListing = () => {
         setIsSubmitting(false);
         return;
       }
-      
+
       if (!userData || !userData.appPrivateKey) {
         alert('Wallet not properly connected');
         setIsSubmitting(false);
@@ -118,7 +120,7 @@ export const CreateListing = () => {
         />
         <div className="form-help">Enter the price in STX (e.g., 1.5 for 1.5 STX)</div>
       </div>
-      
+
       <div className="form-group">
         <label className="form-label">
           Royalty (basis points)
@@ -135,7 +137,7 @@ export const CreateListing = () => {
         />
         <div className="form-help">Max 1000 (10%). Example: 500 = 5%</div>
       </div>
-      
+
       <div className="form-group">
         <label className="form-label">
           Royalty Recipient (STX address)
@@ -151,7 +153,7 @@ export const CreateListing = () => {
         />
         <div className="form-help">Stacks address that will receive royalty payments</div>
       </div>
-      
+
       <button
         type="submit"
         className="btn btn-success btn-lg"
