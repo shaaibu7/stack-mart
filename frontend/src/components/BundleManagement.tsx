@@ -3,6 +3,9 @@ import { useStacks } from '../hooks/useStacks';
 import { useContract } from '../hooks/useContract';
 import { makeContractCall, broadcastTransaction, AnchorMode, PostConditionMode, uintCV, listCV } from '@stacks/transactions';
 import { CONTRACT_ID } from '../config/contract';
+import { TRANSACTION_FEE } from '../config/constants';
+
+import { validateBasisPoints } from '../utils/validation';
 
 import { validateBasisPoints } from '../utils/validation';
 
@@ -96,7 +99,7 @@ export const BundleManagement = () => {
         network,
         anchorMode: AnchorMode.Any,
         postConditionMode: PostConditionMode.Allow,
-        fee: 150000,
+        fee: TRANSACTION_FEE,
       };
 
       const transaction = await makeContractCall(txOptions);
@@ -148,7 +151,7 @@ export const BundleManagement = () => {
         network,
         anchorMode: AnchorMode.Any,
         postConditionMode: PostConditionMode.Allow,
-        fee: 150000,
+        fee: TRANSACTION_FEE,
       };
 
       const transaction = await makeContractCall(txOptions);
