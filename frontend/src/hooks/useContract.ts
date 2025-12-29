@@ -210,6 +210,81 @@ export const useContract = () => {
     }
   }, [API_URL, CONTRACT_ID, userSession]);
 
+  const getTransactionHistory = useCallback(async (principal: string) => {
+    try {
+      const history = [];
+      // Fetch last 10 transactions (mock limit since we don't know total count easily without indexer)
+      // In a real app, we'd use an indexer or have a "get-transaction-count" function
+      for (let i = 0; i < 10; i++) {
+        try {
+          const response = await fetch(`${API_URL}/v2/contracts/call-read/${CONTRACT_ID}/get-transaction-history`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sender: principal,
+              arguments: [principal, i.toString()],
+            }),
+          });
+
+          if (!response.ok) break; // Stop if error (likely index out of bounds)
+
+          const data = await response.json();
+          if (data && data.okay && data.result) {
+            history.push(data.result); // Clarinet response format
+          } else if (data && data.value) {
+            history.push(data.value); // API response format
+          } else {
+            break;
+          }
+        } catch (e) {
+          break;
+        }
+      }
+      return history;
+    } catch (error) {
+      console.error('Error fetching transaction history:', error);
+      return [];
+    }
+  }, [API_URL, CONTRACT_ID]);
+
+  const getSellerReputation = useCallback(async (principal: string) => {
+    try {
+      const response = await fetch(`${API_URL}/v2/contracts/call-read/${CONTRACT_ID}/get-seller-reputation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sender: principal,
+          arguments: [principal],
+        }),
+      });
+
+      if (!response.ok) return null;
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching seller reputation:', error);
+      return null;
+    }
+  }, [API_URL, CONTRACT_ID]);
+
+  const getBuyerReputation = useCallback(async (principal: string) => {
+    try {
+      const response = await fetch(`${API_URL}/v2/contracts/call-read/${CONTRACT_ID}/get-buyer-reputation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sender: principal,
+          arguments: [principal],
+        }),
+      });
+
+      if (!response.ok) return null;
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching buyer reputation:', error);
+      return null;
+    }
+  }, [API_URL, CONTRACT_ID]);
+
   return {
     getListing,
     getEscrowStatus,
@@ -218,6 +293,9 @@ export const useContract = () => {
     getDisputeStakes,
     getBundle,
     getPack,
+    getTransactionHistory,
+    getSellerReputation,
+    getBuyerReputation,
   };
 };
 

@@ -3,14 +3,14 @@ import { useStacks } from '../hooks/useStacks';
 import { useContract } from '../hooks/useContract';
 import { makeContractCall, broadcastTransaction, AnchorMode, PostConditionMode, uintCV, stringAsciiCV, boolCV } from '@stacks/transactions';
 import { CONTRACT_ID } from '../config/contract';
-import { validatePrice, formatSTX } from '../utils/validation';
+import { TRANSACTION_FEE, DISPUTE_RESOLUTION_THRESHOLD_MICROSTX } from '../config/constants';
 
 interface DisputeResolutionProps {
   listingId: number;
   escrowId: number;
 }
 
-export const DisputeResolution = ({ listingId, escrowId }: DisputeResolutionProps) => {
+export const DisputeResolution = ({ escrowId }: DisputeResolutionProps) => {
   const { userSession, network, isConnected, userData } = useStacks();
   const { getDispute, getDisputeStakes } = useContract();
   const [dispute, setDispute] = useState<any>(null);
@@ -39,7 +39,7 @@ export const DisputeResolution = ({ listingId, escrowId }: DisputeResolutionProp
           const disputeData = await getDispute(id);
           if (disputeData?.value && disputeData.value['escrow-id']?.value === escrowId) {
             setDispute({ id, ...disputeData.value });
-            
+
             // Load user's stake if connected
             if (userData?.profile?.stxAddress?.mainnet) {
               try {
@@ -80,7 +80,7 @@ export const DisputeResolution = ({ listingId, escrowId }: DisputeResolutionProp
         setIsSubmitting(false);
         return;
       }
-      
+
       if (!userData || !userData.appPrivateKey) {
         alert('Wallet not properly connected');
         setIsSubmitting(false);
@@ -136,7 +136,7 @@ export const DisputeResolution = ({ listingId, escrowId }: DisputeResolutionProp
         setIsSubmitting(false);
         return;
       }
-      
+
       if (!userData || !userData.appPrivateKey) {
         alert('Wallet not properly connected');
         setIsSubmitting(false);
@@ -195,7 +195,7 @@ export const DisputeResolution = ({ listingId, escrowId }: DisputeResolutionProp
         setIsSubmitting(false);
         return;
       }
-      
+
       if (!userData || !userData.appPrivateKey) {
         alert('Wallet not properly connected');
         setIsSubmitting(false);
@@ -245,7 +245,7 @@ export const DisputeResolution = ({ listingId, escrowId }: DisputeResolutionProp
         setIsSubmitting(false);
         return;
       }
-      
+
       if (!userData || !userData.appPrivateKey) {
         alert('Wallet not properly connected');
         setIsSubmitting(false);
@@ -299,7 +299,7 @@ export const DisputeResolution = ({ listingId, escrowId }: DisputeResolutionProp
         <div className="card-body">
           <h3>⚖️ Create Dispute</h3>
           <p>If there's an issue with the escrow, you can create a dispute for community resolution.</p>
-          
+
           <div className="form-group">
             <label className="form-label">Dispute Reason</label>
             <textarea
@@ -341,7 +341,7 @@ export const DisputeResolution = ({ listingId, escrowId }: DisputeResolutionProp
     <div className="card">
       <div className="card-body">
         <h3>⚖️ Dispute #{dispute.id}</h3>
-        
+
         <div className="info-box" style={{ marginBottom: '20px' }}>
           <p><strong>Status:</strong> {isResolved ? '✅ Resolved' : '⏳ Active'}</p>
           <p><strong>Reason:</strong> {disputeReason}</p>

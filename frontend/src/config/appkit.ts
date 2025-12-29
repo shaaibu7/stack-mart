@@ -4,7 +4,7 @@ import { mainnet, sepolia } from 'viem/chains'
 
 // Get project ID from environment or use a default
 // You should get your own Project ID from https://cloud.reown.com
-const projectId = import.meta.env.VITE_REOWN_PROJECT_ID || 'YOUR_PROJECT_ID'
+const projectId = import.meta.env.VITE_REOWN_PROJECT_ID || '037216c37e770337c0cbfa970a4a2797'
 
 // Create Wagmi adapter for EVM chains
 const wagmiAdapter = new WagmiAdapter({
@@ -38,7 +38,7 @@ export const appKit = createAppKit({
 })
 
 // Export wagmi config for provider
-export const wagmiConfig = appKit.wagmiConfig
+export const wagmiConfig = wagmiAdapter.wagmiConfig
 
 export default appKit
 

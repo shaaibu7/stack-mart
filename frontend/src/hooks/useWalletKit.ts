@@ -1,4 +1,4 @@
-import { useWalletKit } from '@walletkit/react-link';
+import { useWalletKitLink } from '@walletkit/react-link';
 import { useState, useEffect } from 'react';
 
 /**
@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react';
  * Provides access to WalletKit's gasless wallet features
  */
 export const useWalletKitHook = () => {
-  const walletKit = useWalletKit();
+  const walletKit = useWalletKitLink() as any;
   const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
