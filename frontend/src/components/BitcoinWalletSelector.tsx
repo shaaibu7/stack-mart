@@ -62,6 +62,37 @@ export const BitcoinWalletSelector = ({
 }: BitcoinWalletSelectorProps) => {
   const [showWalletList, setShowWalletList] = useState(false);
   const [availableWallets, setAvailableWallets] = useState<string[]>([]);
+  const [localUserData, setLocalUserData] = useState(userData);
+
+  // Listen for userSession changes
+  useEffect(() => {
+    const checkSession = () => {
+      try {
+        if (userSession.isUserSignedIn()) {
+          const data = userSession.loadUserData();
+          setLocalUserData(data || undefined);
+        } else {
+          setLocalUserData(undefined);
+        }
+      } catch (error) {
+        console.warn('Error checking session:', error);
+        setLocalUserData(undefined);
+      }
+    };
+
+    // Check immediately
+    checkSession();
+
+    // Poll for changes
+    const interval = setInterval(checkSession, 500);
+    
+    return () => clearInterval(interval);
+  }, [userSession]);
+
+  // Update local state when prop changes
+  useEffect(() => {
+    setLocalUserData(userData);
+  }, [userData]);
 
   // Detect available wallets
   useEffect(() => {
@@ -107,14 +138,32 @@ export const BitcoinWalletSelector = ({
           name: 'StackMart',
           icon: window.location.origin + '/vite.svg',
         },
+        network: network,
         redirectTo: '/',
-        onFinish: () => {
-          // Small delay to ensure userSession is updated
-          setTimeout(() => {
-            onConnect();
-          }, 100);
+        onFinish: async () => {
+          console.log('Wallet connection finished, updating state...');
+          
+          // Wait a bit for userSession to be updated
+          await new Promise(resolve => setTimeout(resolve, 300));
+          
+          // Also manually check and update local state first
+          try {
+            if (userSession.isUserSignedIn()) {
+              const data = userSession.loadUserData();
+              console.log('User data loaded:', data);
+              setLocalUserData(data || undefined);
+            } else {
+              console.log('User session not signed in yet');
+            }
+          } catch (error) {
+            console.error('Error updating local user data:', error);
+          }
+          
+          // Trigger the onConnect callback which will update state in the hook
+          onConnect();
         },
         onCancel: () => {
+          console.log('User cancelled wallet connection');
           // User cancelled - do nothing
         },
       });
@@ -132,9 +181,13 @@ export const BitcoinWalletSelector = ({
     }
   };
 
+  // Use local userData if available, fallback to prop
+  const currentUserData = localUserData || userData;
+  const currentIsConnected = userSession.isUserSignedIn() || isConnected;
+
   // If connected, show connected state
-  if (isConnected && userData) {
-    const address = userData?.profile?.stxAddress?.mainnet || userData?.profile?.stxAddress?.testnet;
+  if (currentIsConnected && currentUserData) {
+    const address = currentUserData?.profile?.stxAddress?.mainnet || currentUserData?.profile?.stxAddress?.testnet;
     const shortAddress = address ? formatAddress(address) : 'Connected';
 
     return (
