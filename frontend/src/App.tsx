@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { WalletButton } from './components/WalletButton';
-import { UnifiedWalletSelector } from './components/UnifiedWalletSelector';
 import { CreateListing } from './components/CreateListing';
 import { ListingCard } from './components/ListingCard';
 import { ListingDetails } from './components/ListingDetails';
@@ -82,15 +81,12 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Use unified wallet selector for better UX (supports all wallet types)
-  const useUnifiedSelector = import.meta.env.VITE_USE_UNIFIED_WALLET === 'true' || true;
-
   if (selectedListingId) {
     return (
       <div className="App">
         <header>
           <h1>StackMart Marketplace</h1>
-          {useUnifiedSelector ? <UnifiedWalletSelector /> : <WalletButton />}
+          <WalletButton />
         </header>
         <ListingDetails
           listingId={selectedListingId}
@@ -104,7 +100,7 @@ function App() {
     <div className="App">
       <header>
         <h1>StackMart Marketplace</h1>
-        {useUnifiedSelector ? <UnifiedWalletSelector /> : <WalletButton />}
+        <WalletButton />
       </header>
 
       <main>
