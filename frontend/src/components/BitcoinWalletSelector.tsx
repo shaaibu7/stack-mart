@@ -144,23 +144,51 @@ export const BitcoinWalletSelector = ({
           console.log('Wallet connection finished, updating state...');
           
           // Wait a bit for userSession to be updated
-          await new Promise(resolve => setTimeout(resolve, 300));
+          await new Promise(resolve => setTimeout(resolve, 500));
           
-          // Also manually check and update local state first
-          try {
-            if (userSession.isUserSignedIn()) {
-              const data = userSession.loadUserData();
-              console.log('User data loaded:', data);
-              setLocalUserData(data || undefined);
-            } else {
-              console.log('User session not signed in yet');
+          // Check multiple times to ensure we get the updated data
+          let attempts = 0;
+          const maxAttempts = 10;
+          
+          const checkAndUpdate = setInterval(() => {
+            attempts++;
+            try {
+              if (userSession.isUserSignedIn()) {
+                const data = userSession.loadUserData();
+                if (data) {
+                  console.log('User data loaded:', data);
+                  setLocalUserData(data);
+                  clearInterval(checkAndUpdate);
+                  
+                  // Trigger the onConnect callback which will update state in the hook
+                  onConnect();
+                  return;
+                }
+              }
+              
+              // If max attempts reached, stop checking
+              if (attempts >= maxAttempts) {
+                clearInterval(checkAndUpdate);
+                // Final check
+                try {
+                  if (userSession.isUserSignedIn()) {
+                    const data = userSession.loadUserData();
+                    setLocalUserData(data || undefined);
+                  }
+                } catch (error) {
+                  console.error('Error updating local user data:', error);
+                }
+                // Still trigger onConnect to update hook state
+                onConnect();
+              }
+            } catch (error) {
+              console.error('Error checking connection:', error);
+              if (attempts >= maxAttempts) {
+                clearInterval(checkAndUpdate);
+                onConnect();
+              }
             }
-          } catch (error) {
-            console.error('Error updating local user data:', error);
-          }
-          
-          // Trigger the onConnect callback which will update state in the hook
-          onConnect();
+          }, 200); // Check every 200ms
         },
         onCancel: () => {
           console.log('User cancelled wallet connection');
