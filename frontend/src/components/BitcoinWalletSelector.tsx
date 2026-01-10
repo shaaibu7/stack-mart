@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { showConnect } from '@stacks/connect';
-import { UserSession } from '@stacks/connect';
+import { connect, isConnected, getLocalStorage } from '@stacks/connect';
 import { STACKS_MAINNET, STACKS_TESTNET } from '@stacks/network';
 import { NETWORK } from '../config/contract';
 import { formatAddress } from '../utils/validation';
@@ -44,7 +43,7 @@ const BITCOIN_WALLETS = [
 const network = NETWORK === 'mainnet' ? STACKS_MAINNET : STACKS_TESTNET;
 
 interface BitcoinWalletSelectorProps {
-  userSession: UserSession;
+  userSession: any; // Compatibility wrapper from useStacks
   onConnect: () => void;
   onDisconnect: () => void;
   isConnected: boolean;
@@ -137,82 +136,32 @@ export const BitcoinWalletSelector = ({
     try {
       console.log('Connecting to wallet:', walletId);
       
-      // Build the showConnect options
-      const connectOptions: any = {
-        appDetails: {
-          name: 'StackMart',
-          icon: window.location.origin + '/vite.svg',
-        },
-        network: network,
-        redirectTo: '/',
-        onFinish: async () => {
-          console.log('Wallet connection finished, updating state...');
-          setConnectingWallet(null);
-          
-          // Wait a bit for userSession to be updated
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
-          // Check multiple times to ensure we get the updated data
-          let attempts = 0;
-          const maxAttempts = 15; // Increased attempts
-          
-          const checkAndUpdate = setInterval(() => {
-            attempts++;
-            try {
-              if (userSession.isUserSignedIn()) {
-                const data = userSession.loadUserData();
-                if (data) {
-                  console.log('User data loaded:', data);
-                  setLocalUserData(data);
-                  clearInterval(checkAndUpdate);
-                  
-                  // Trigger the onConnect callback which will update state in the hook
-                  onConnect();
-                  return;
-                }
-              }
-              
-              // If max attempts reached, stop checking
-              if (attempts >= maxAttempts) {
-                clearInterval(checkAndUpdate);
-                // Final check
-                try {
-                  if (userSession.isUserSignedIn()) {
-                    const data = userSession.loadUserData();
-                    setLocalUserData(data || undefined);
-                  }
-                } catch (error) {
-                  console.error('Error updating local user data:', error);
-                }
-                // Still trigger onConnect to update hook state
-                onConnect();
-              }
-            } catch (error) {
-              console.error('Error checking connection:', error);
-              if (attempts >= maxAttempts) {
-                clearInterval(checkAndUpdate);
-                onConnect();
-              }
-            }
-          }, 300); // Check every 300ms
-        },
-        onCancel: () => {
-          console.log('User cancelled wallet connection');
-          setConnectingWallet(null);
-          setShowWalletList(false);
-          // User cancelled - do nothing
-        },
-      };
+      // Check if already connected
+      if (isConnected()) {
+        console.log('Already authenticated');
+        const data = getLocalStorage();
+        if (data) {
+          setLocalUserData(data);
+        }
+        setConnectingWallet(null);
+        onConnect();
+        return;
+      }
 
-      // If a specific wallet is selected and available, try to use it
-      // Note: showConnect may show its own modal, but this ensures we're ready
-      if (walletId && availableWallets.includes(walletId)) {
-        console.log('Specific wallet selected:', walletId);
-        // The showConnect will handle the wallet selection
-        // If the wallet extension is available, it should be prioritized
+      // Connect to wallet using new API
+      const response = await connect();
+      console.log('Connected:', response.addresses);
+      
+      // Update local state
+      const data = getLocalStorage();
+      if (data) {
+        setLocalUserData(data);
       }
       
-      showConnect(connectOptions);
+      setConnectingWallet(null);
+      
+      // Trigger the onConnect callback which will update state in the hook
+      onConnect();
     } catch (error) {
       console.error('Error connecting wallet:', error);
       setConnectingWallet(null);
