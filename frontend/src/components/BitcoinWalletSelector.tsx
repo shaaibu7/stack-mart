@@ -55,7 +55,7 @@ export const BitcoinWalletSelector = ({
   userSession,
   onConnect,
   onDisconnect,
-  isConnected,
+  isConnected: isConnectedProp,
   userData,
   isLoading,
 }: BitcoinWalletSelectorProps) => {
@@ -180,7 +180,7 @@ export const BitcoinWalletSelector = ({
 
   // Use local userData if available, fallback to prop
   const currentUserData = localUserData || userData;
-  const currentIsConnected = isConnected() || isConnected;
+  const currentIsConnected = isConnected() || isConnectedProp;
 
   // If connected, show connected state
   if (currentIsConnected && currentUserData) {
