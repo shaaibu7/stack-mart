@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { connect, isConnected, disconnect, getLocalStorage } from '@stacks/connect';
 import { STACKS_MAINNET, STACKS_TESTNET } from '@stacks/network';
 import { NETWORK } from '../config/contract';
-import { useAppKit } from '@reown/appkit/react';
 import { useAccount } from 'wagmi';
 
 const network = NETWORK === 'mainnet' ? STACKS_MAINNET : STACKS_TESTNET;
