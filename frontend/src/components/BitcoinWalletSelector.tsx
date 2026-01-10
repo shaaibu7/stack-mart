@@ -1,46 +1,6 @@
 import { useState, useEffect } from 'react';
 import { connect, isConnected, getLocalStorage } from '@stacks/connect';
-import { STACKS_MAINNET, STACKS_TESTNET } from '@stacks/network';
-import { NETWORK } from '../config/contract';
 import { formatAddress } from '../utils/validation';
-
-// Wallet definitions
-const BITCOIN_WALLETS = [
-  {
-    id: 'leather',
-    name: 'Leather',
-    description: 'Formerly Hiro Wallet - Bitcoin & Stacks',
-    icon: '🟠',
-    downloadUrl: 'https://leather.io/install-extension',
-    extensionId: 'leather',
-  },
-  {
-    id: 'xverse',
-    name: 'Xverse',
-    description: 'Bitcoin & Stacks Wallet',
-    icon: '🟣',
-    downloadUrl: 'https://www.xverse.app/',
-    extensionId: 'xverse',
-  },
-  {
-    id: 'okx',
-    name: 'OKX Wallet',
-    description: 'Multi-chain wallet with Bitcoin support',
-    icon: '🔵',
-    downloadUrl: 'https://www.okx.com/web3',
-    extensionId: 'okx',
-  },
-  {
-    id: 'unisat',
-    name: 'UniSat Wallet',
-    description: 'Bitcoin Ordinals & BRC-20',
-    icon: '🟡',
-    downloadUrl: 'https://unisat.io/',
-    extensionId: 'unisat',
-  },
-];
-
-const network = NETWORK === 'mainnet' ? STACKS_MAINNET : STACKS_TESTNET;
 
 interface BitcoinWalletSelectorProps {
   userSession: any; // Compatibility wrapper from useStacks
@@ -60,7 +20,7 @@ export const BitcoinWalletSelector = ({
   isLoading,
 }: BitcoinWalletSelectorProps) => {
   const [localUserData, setLocalUserData] = useState(userData);
-  const [connectingWallet, setConnectingWallet] = useState<string | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false);
 
   // Listen for connection changes
   useEffect(() => {
@@ -93,8 +53,7 @@ export const BitcoinWalletSelector = ({
   }, [userData]);
 
   const connectToWallet = async () => {
-    setIsLoading(true);
-    setConnectingWallet(null);
+    setIsConnecting(true);
     
     try {
       // Check if already connected
@@ -104,7 +63,7 @@ export const BitcoinWalletSelector = ({
         if (data) {
           setLocalUserData(data);
         }
-        setIsLoading(false);
+        setIsConnecting(false);
         onConnect();
         return;
       }
@@ -119,14 +78,13 @@ export const BitcoinWalletSelector = ({
         setLocalUserData(data);
       }
       
-      setIsLoading(false);
+      setIsConnecting(false);
       
       // Trigger the onConnect callback which will update state in the hook
       onConnect();
     } catch (error) {
       console.error('Error connecting wallet:', error);
-      setIsLoading(false);
-      setConnectingWallet(null);
+      setIsConnecting(false);
     }
   };
 
@@ -192,10 +150,10 @@ export const BitcoinWalletSelector = ({
     <button
       className="btn btn-primary"
       onClick={connectToWallet}
-      disabled={isLoading}
+      disabled={isLoading || isConnecting}
       style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)', color: 'white', border: '1px solid rgba(255, 255, 255, 0.3)' }}
     >
-      {isLoading ? (
+      {(isLoading || isConnecting) ? (
         <>
           <span className="loading"></span>
           Connecting...
