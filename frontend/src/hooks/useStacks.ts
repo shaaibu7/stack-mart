@@ -102,8 +102,16 @@ export const useStacks = () => {
       console.log('Connected:', response.addresses);
       
       // Update state with connection data
-      // After connect(), get the data from localStorage
-      const data = getLocalStorage();
+      // Use response data if available, otherwise get from localStorage
+      let data = getLocalStorage();
+      
+      // If response has addresses, merge them into the data structure
+      if (response.addresses && data) {
+        data = { ...data, addresses: response.addresses };
+      } else if (response.addresses && !data) {
+        data = { addresses: response.addresses };
+      }
+      
       if (data) {
         setUserData(data);
         setIsStacksConnected(true);
