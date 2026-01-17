@@ -1,6 +1,6 @@
 import { useAccount } from 'wagmi';
-import { useWalletKitLink } from '@walletkit/react-link';
 import { useStacks } from './useStacks';
+import { getStacksAddress } from '../utils/validation';
 import { useEffect, useState } from 'react';
 
 interface Transaction {
@@ -17,11 +17,9 @@ interface Transaction {
  */
 export const useTransactionHistory = () => {
   const { address: appKitAddress, isConnected: appKitConnected } = useAccount();
-  const walletKit = useWalletKitLink() as any;
   const { userData, isConnected: stacksConnected } = useStacks();
   
   const [appKitTransactions, setAppKitTransactions] = useState<Transaction[]>([]);
-  const [walletKitTransactions, setWalletKitTransactions] = useState<Transaction[]>([]);
   const [stacksTransactions, setStacksTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -37,7 +35,7 @@ export const useTransactionHistory = () => {
       try {
         // In production, use a block explorer API or indexer
         // For now, this is a placeholder
-        const response = await fetch(
+        await fetch(
           `https://api.etherscan.io/api?module=account&action=txlist&address=${appKitAddress}&startblock=0&endblock=99999999&sort=desc&apikey=YourApiKeyToken`
         );
         // Note: This requires an API key and proper error handling
@@ -57,15 +55,19 @@ export const useTransactionHistory = () => {
   // Fetch Stacks transactions
   useEffect(() => {
     const fetchStacksTransactions = async () => {
-      const userDataAny = userData as any;
-      if (!stacksConnected || !userDataAny?.profile?.stxAddress?.mainnet) {
+      if (!stacksConnected || !userData) {
+        setStacksTransactions([]);
+        return;
+      }
+
+      const address = getStacksAddress(userData);
+      if (!address) {
         setStacksTransactions([]);
         return;
       }
 
       setIsLoading(true);
       try {
-        const address = userDataAny.profile.stxAddress.mainnet;
         const response = await fetch(
           `https://api.hiro.so/extended/v1/address/${address}/transactions?limit=10`
         );
@@ -95,14 +97,12 @@ export const useTransactionHistory = () => {
   const allTransactions = [
     ...stacksTransactions,
     ...appKitTransactions,
-    ...walletKitTransactions,
   ].sort((a, b) => b.timestamp - a.timestamp);
 
   return {
     transactions: allTransactions,
     stacksTransactions,
     appKitTransactions,
-    walletKitTransactions,
     isLoading,
   };
 };

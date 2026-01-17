@@ -1,6 +1,7 @@
 import { useStacks } from './useStacks';
 import { useAppKitIntegration } from './useAppKitIntegration';
 import { useWalletKitHook } from './useWalletKit';
+import { getStacksAddress as getStacksAddressUtil } from '../utils/validation';
 
 /**
  * Unified hook that aggregates all wallet connection states
@@ -15,27 +16,7 @@ export const useAllWallets = () => {
   
   // Helper to extract Stacks address from userData (supports both old and new API formats)
   const getStacksAddress = () => {
-    if (!stacks.userData) return null;
-    
-    // Try new API format first (addresses.stx[0].address)
-    if (stacks.userData.addresses?.stx?.[0]?.address) {
-      return stacks.userData.addresses.stx[0].address;
-    }
-    
-    // Try alternative new API format
-    if (Array.isArray(stacks.userData.addresses?.stx) && stacks.userData.addresses.stx.length > 0) {
-      const firstAddress = stacks.userData.addresses.stx[0];
-      if (typeof firstAddress === 'string') {
-        return firstAddress;
-      }
-      if (firstAddress?.address) {
-        return firstAddress.address;
-      }
-    }
-    
-    // Try old API format (profile.stxAddress)
-    const userData = stacks.userData as any;
-    return userData?.profile?.stxAddress?.mainnet || userData?.profile?.stxAddress?.testnet || null;
+    return getStacksAddressUtil(stacks.userData);
   };
 
   const connectedWallets = [

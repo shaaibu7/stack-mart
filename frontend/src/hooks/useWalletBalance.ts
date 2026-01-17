@@ -1,6 +1,7 @@
 import { useAccount, useBalance } from 'wagmi';
 import { useWalletKitLink } from '@walletkit/react-link';
 import { useStacks } from './useStacks';
+import { getStacksAddress } from '../utils/validation';
 import { useEffect, useState } from 'react';
 
 /**
@@ -47,26 +48,31 @@ export const useWalletBalance = () => {
   // Fetch Stacks balance
   useEffect(() => {
     const fetchStacksBalance = async () => {
-      const userDataAny = userData as any;
-      if (stacksConnected && userDataAny?.profile?.stxAddress?.mainnet) {
-        setIsLoading(true);
-        try {
-          const address = userDataAny.profile.stxAddress.mainnet;
-          const response = await fetch(
-            `https://api.hiro.so/v2/accounts/${address}?proof=0`
-          );
-          if (response.ok) {
-            const data = await response.json();
-            const balance = (data.balance / 1000000).toFixed(6); // Convert microSTX to STX
-            setStacksBalance(balance);
-          }
-        } catch (error) {
-          console.error('Error fetching Stacks balance:', error);
-        } finally {
-          setIsLoading(false);
-        }
-      } else {
+      if (!stacksConnected || !userData) {
         setStacksBalance(null);
+        return;
+      }
+
+      const address = getStacksAddress(userData);
+      if (!address) {
+        setStacksBalance(null);
+        return;
+      }
+
+      setIsLoading(true);
+      try {
+        const response = await fetch(
+          `https://api.hiro.so/v2/accounts/${address}?proof=0`
+        );
+        if (response.ok) {
+          const data = await response.json();
+          const balance = (data.balance / 1000000).toFixed(6); // Convert microSTX to STX
+          setStacksBalance(balance);
+        }
+      } catch (error) {
+        console.error('Error fetching Stacks balance:', error);
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -77,8 +83,9 @@ export const useWalletBalance = () => {
     // AppKit balance (EVM chains)
     appKitBalance: appKitBalance ? {
       value: appKitBalance.value,
-      formatted: String(appKitBalance.value / BigInt(10 ** appKitBalance.decimals)),
+      decimals: appKitBalance.decimals,
       symbol: appKitBalance.symbol,
+      formatted: String(Number(appKitBalance.value) / Math.pow(10, appKitBalance.decimals)),
     } : null,
     appKitBalanceLoading: false,
     
