@@ -25,6 +25,14 @@ function App() {
   const [activeTab, setActiveTab] = useState<TabType>('listings');
   const [disputeEscrowId, setDisputeEscrowId] = useState<number | null>(null);
 
+  const goHome = () => {
+    setSelectedListingId(null);
+    setActiveTab('listings');
+    setDisputeEscrowId(null);
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const loadListings = async () => {
     setIsLoadingListings(true);
     setError(null);
@@ -81,11 +89,31 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const goHome = () => {
+    setSelectedListingId(null);
+    setActiveTab('listings');
+    setDisputeEscrowId(null);
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   if (selectedListingId) {
     return (
       <div className="App">
         <header>
-          <h1>StackMart Marketplace</h1>
+          <h1 
+            onClick={goHome}
+            style={{ 
+              cursor: 'pointer',
+              userSelect: 'none',
+              transition: 'opacity 0.2s'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
+            onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+            title="Click to go home"
+          >
+            🏠 StackMart Marketplace
+          </h1>
           <WalletButton />
         </header>
         <ListingDetails
@@ -99,7 +127,19 @@ function App() {
   return (
     <div className="App">
       <header>
-        <h1>StackMart Marketplace</h1>
+        <h1 
+          onClick={goHome}
+          style={{ 
+            cursor: 'pointer',
+            userSelect: 'none',
+            transition: 'opacity 0.2s'
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
+          onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+          title="Click to go home"
+        >
+          🏠 StackMart Marketplace
+        </h1>
         <WalletButton />
       </header>
 
