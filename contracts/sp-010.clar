@@ -13,3 +13,6 @@
 ;; Data storage
 ;; Map to track token balances for each principal
 (define-map balances principal uint)
+
+;; Variable to track total token supply
+(define-data-var total-supply uint u0)
