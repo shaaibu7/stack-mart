@@ -166,6 +166,24 @@
 (define-read-only (get-price-history (listing-id uint))
   (ok (default-to { history: (list) } (map-get? price-history { listing-id: listing-id }))))
 
+(define-private (filter-id (id uint))
+  (not (is-eq id (var-get remove-id-iter))))
+
+(define-data-var remove-id-iter uint u0)
+
+(define-public (toggle-wishlist (listing-id uint))
+  (let (
+    (current-wishlist (default-to (list) (get listing-ids (map-get? wishlists { user: tx-sender }))))
+  )
+    (if (is-some (index-of current-wishlist listing-id))
+      (begin
+        (var-set remove-id-iter listing-id)
+        (map-set wishlists { user: tx-sender } { listing-ids: (filter filter-id current-wishlist) })
+        (ok false))
+      (begin
+        (map-set wishlists { user: tx-sender } { listing-ids: (unwrap! (as-max-len? (append current-wishlist listing-id) u100) (err u500)) })
+        (ok true)))))
+
 ;; Bundle and curated pack system
 (define-map bundles
   { id: uint }
