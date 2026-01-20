@@ -12,7 +12,7 @@ batches:
       - contract-publish:
           contract-name: "sp-010"
           expected-sender: "ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM"
-          cost: 50000
+          cost: 75000
           path: "contracts/sp-010.clar"
           clarity-version: 2
           
@@ -22,3 +22,13 @@ token_name: "SP-010"
 token_symbol: "SP010"
 decimals: 6
 metadata_uri: "https://example.com/sp010-metadata.json"
+
+# Network Configuration
+networks:
+  simnet:
+    node_rpc_api: "http://localhost:20443"
+    node_p2p_api: "http://localhost:20444"
+  testnet:
+    node_rpc_api: "https://stacks-node-api.testnet.stacks.co"
+  mainnet:
+    node_rpc_api: "https://stacks-node-api.mainnet.stacks.co"
