@@ -137,12 +137,12 @@
 ;; Safe addition with overflow protection
 (define-private (safe-add (a uint) (b uint))
   (let ((result (+ a b)))
-    (asserts! (>= result a) (err u999)) ;; Overflow check
+    (asserts! (>= result a) ERR-ARITHMETIC-OVERFLOW)
     (ok result)))
 
 ;; Safe subtraction with underflow protection  
 (define-private (safe-sub (a uint) (b uint))
-  (asserts! (>= a b) (err u998)) ;; Underflow check
+  (asserts! (>= a b) ERR-ARITHMETIC-UNDERFLOW)
   (ok (- a b)))
 ;; Additional Input Sanitization
 
