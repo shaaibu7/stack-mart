@@ -53,6 +53,9 @@
     (asserts! (> amount u0) ERR-INVALID-AMOUNT)
     ;; Check for self-transfer
     (asserts! (not (is-eq sender recipient)) ERR-SELF-TRANSFER)
+    ;; Additional validation for principal validity (basic check)
+    (asserts! (is-standard sender) ERR-INVALID-PRINCIPAL)
+    (asserts! (is-standard recipient) ERR-INVALID-PRINCIPAL)
     (ok true)))
 ;; Check if sender has sufficient balance for transfer
 (define-private (check-balance (amount uint) (sender principal))
