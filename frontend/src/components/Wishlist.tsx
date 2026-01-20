@@ -3,9 +3,11 @@ import { useStacks } from '../hooks/useStacks';
 import { useContract } from '../hooks/useContract';
 import { ListingCard } from './ListingCard';
 import { LoadingSkeleton } from './LoadingSkeleton';
+import { getStacksAddress } from '../utils/validation';
 
 export const Wishlist = () => {
-    const { address } = useStacks();
+    const { userData } = useStacks();
+    const address = getStacksAddress(userData as any) || null;
     const { getWishlist, getListing } = useContract();
     const [listings, setListings] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -18,8 +20,8 @@ export const Wishlist = () => {
             }
 
             try {
-                const wishlistData = await getWishlist(address);
-                const ids = wishlistData.listing_ids?.value || wishlistData.listing_ids || [];
+                const wishlistData: any = await getWishlist(address);
+                const ids = wishlistData?.listing_ids?.value || wishlistData?.listing_ids || [];
 
                 if (ids.length > 0) {
                     const loadedListings = await Promise.all(
