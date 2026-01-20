@@ -107,3 +107,16 @@
     amount: amount,
     recipient: recipient
   }))
+;; Minting Functions
+
+;; Private mint function for creating new tokens
+(define-private (mint (amount uint) (recipient principal))
+  (let ((recipient-balance (default-to u0 (map-get? balances recipient)))
+        (new-recipient-balance (+ recipient-balance amount))
+        (current-supply (var-get total-supply))
+        (new-supply (+ current-supply amount)))
+    ;; Update recipient balance
+    (map-set balances recipient new-recipient-balance)
+    ;; Update total supply
+    (var-set total-supply new-supply)
+    (ok true)))
