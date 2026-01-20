@@ -22,7 +22,8 @@
 ;; Initial supply (1 million tokens with 6 decimals)
 (define-constant INITIAL-SUPPLY u1000000000000)
 
-;; Data storage
+;; Data storage structures
+;; Efficient storage design for token balances and supply tracking
 ;; Map to track token balances for each principal
 (define-map balances principal uint)
 
