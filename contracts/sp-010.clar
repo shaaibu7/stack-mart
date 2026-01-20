@@ -116,19 +116,24 @@
   }))
 ;; Minting Functions
 
-;; Private mint function for creating new tokens
+;; Private mint function for creating new tokens (optimized)
 (define-private (mint (amount uint) (recipient principal))
   (let ((recipient-balance (default-to u0 (map-get? balances recipient)))
-        (new-recipient-balance (+ recipient-balance amount))
-        (current-supply (var-get total-supply))
-        (new-supply (+ current-supply amount)))
-    ;; Update recipient balance
-    (map-set balances recipient new-recipient-balance)
-    ;; Update total supply
-    (var-set total-supply new-supply)
-    ;; Emit mint event
-    (emit-mint-event amount recipient)
-    (ok true)))
+        (current-supply (var-get total-supply)))
+    ;; Use safe arithmetic for overflow protection
+    (match (safe-add recipient-balance amount)
+      new-recipient-balance 
+        (match (safe-add current-supply amount)
+          new-supply (begin
+            ;; Update recipient balance
+            (map-set balances recipient new-recipient-balance)
+            ;; Update total supply
+            (var-set total-supply new-supply)
+            ;; Emit mint event
+            (emit-mint-event amount recipient)
+            (ok true))
+          error error)
+      error error)))
 ;; Contract Initialization
 
 ;; Initialize contract with initial token supply to deployer
