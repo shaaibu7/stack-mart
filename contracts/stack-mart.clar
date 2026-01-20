@@ -152,8 +152,6 @@
   , weight: uint
   })
 
-;; Wishlist system
-(define-map wishlists
   { user: principal }
   { listing-ids: (list 100 uint) })
 
@@ -161,6 +159,12 @@
 (define-map price-history
   { listing-id: uint }
   { history: (list 10 { price: uint, block-height: uint }) })
+
+(define-read-only (get-wishlist (user principal))
+  (ok (default-to { listing-ids: (list) } (map-get? wishlists { user: user }))))
+
+(define-read-only (get-price-history (listing-id uint))
+  (ok (default-to { history: (list) } (map-get? price-history { listing-id: listing-id }))))
 
 ;; Bundle and curated pack system
 (define-map bundles
