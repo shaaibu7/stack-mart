@@ -16,3 +16,9 @@
 
 ;; Variable to track total token supply
 (define-data-var total-supply uint u0)
+;; Error constants following SIP-010 standards
+(define-constant ERR-INSUFFICIENT-BALANCE (err u1))
+(define-constant ERR-INVALID-PRINCIPAL (err u2))
+(define-constant ERR-UNAUTHORIZED (err u3))
+(define-constant ERR-INVALID-AMOUNT (err u4))
+(define-constant ERR-SELF-TRANSFER (err u5))
