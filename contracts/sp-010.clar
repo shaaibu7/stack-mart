@@ -12,6 +12,10 @@
 ;; - Gas-optimized storage operations
 ;; - Initial token distribution to deployer
 
+;; ============================================================================
+;; CONSTANTS AND CONFIGURATION
+;; ============================================================================
+
 ;; Contract metadata constants
 ;; These define the basic token properties following SIP-010 standard
 (define-constant CONTRACT-NAME "SP-010")
@@ -22,13 +26,6 @@
 ;; Initial supply (1 million tokens with 6 decimals)
 (define-constant INITIAL-SUPPLY u1000000000000)
 
-;; Data storage structures
-;; Efficient storage design for token balances and supply tracking
-;; Map to track token balances for each principal
-(define-map balances principal uint)
-
-;; Variable to track total token supply
-(define-data-var total-supply uint u0)
 ;; Error constants following SIP-010 standards
 (define-constant ERR-INSUFFICIENT-BALANCE (err u1))
 (define-constant ERR-INVALID-PRINCIPAL (err u2))
@@ -37,31 +34,37 @@
 (define-constant ERR-SELF-TRANSFER (err u5))
 (define-constant ERR-ARITHMETIC-OVERFLOW (err u999))
 (define-constant ERR-ARITHMETIC-UNDERFLOW (err u998))
-;; SIP-010 Metadata Functions
 
-;; Get token name
-(define-read-only (get-name)
-  (ok CONTRACT-NAME))
-;; Get token symbol
-(define-read-only (get-symbol)
-  (ok CONTRACT-SYMBOL))
-;; Get token decimals
-(define-read-only (get-decimals)
-  (ok CONTRACT-DECIMALS))
-;; Get token URI for metadata
-(define-read-only (get-token-uri)
-  (ok (some CONTRACT-URI)))
-;; Balance and Supply Query Functions
+;; ============================================================================
+;; DATA STORAGE
+;; ============================================================================
 
-;; Get balance for a principal (returns 0 if never held tokens)
-(define-read-only (get-balance (who principal))
-  (begin
-    (try! (validate-balance-query who))
-    (ok (default-to u0 (map-get? balances who)))))
-;; Get total supply of tokens
-(define-read-only (get-total-supply)
-  (ok (var-get total-supply)))
-;; Transfer Helper Functions
+;; Data storage structures
+;; Efficient storage design for token balances and supply tracking
+;; Map to track token balances for each principal
+(define-map balances principal uint)
+
+;; Variable to track total token supply
+(define-data-var total-supply uint u0)
+
+;; ============================================================================
+;; SAFE ARITHMETIC FUNCTIONS
+;; ============================================================================
+
+;; Safe addition with overflow protection
+(define-private (safe-add (a uint) (b uint))
+  (let ((result (+ a b)))
+    (asserts! (>= result a) ERR-ARITHMETIC-OVERFLOW)
+    (ok result)))
+
+;; Safe subtraction with underflow protection  
+(define-private (safe-sub (a uint) (b uint))
+  (asserts! (>= a b) ERR-ARITHMETIC-UNDERFLOW)
+  (ok (- a b)))
+
+;; ============================================================================
+;; INPUT VALIDATION FUNCTIONS
+;; ============================================================================
 
 ;; Validate transfer parameters
 (define-private (validate-transfer (amount uint) (sender principal) (recipient principal))
@@ -74,11 +77,51 @@
     (asserts! (is-standard sender) ERR-INVALID-PRINCIPAL)
     (asserts! (is-standard recipient) ERR-INVALID-PRINCIPAL)
     (ok true)))
+
+;; Enhanced balance validation
+(define-private (validate-balance-query (who principal))
+  (begin
+    (asserts! (is-standard who) ERR-INVALID-PRINCIPAL)
+    (ok true)))
+
+;; Validate principal is not contract address (additional security)
+(define-private (validate-principal-not-contract (who principal))
+  (asserts! (not (is-eq who (as-contract tx-sender))) ERR-INVALID-PRINCIPAL)
+  (ok true))
+
+;; ============================================================================
+;; EVENT EMISSION FUNCTIONS
+;; ============================================================================
+
+;; Emit transfer event following SIP-010 specification
+(define-private (emit-transfer-event (amount uint) (sender principal) (recipient principal))
+  (print {
+    type: "ft_transfer_event",
+    token-contract: (as-contract tx-sender),
+    amount: amount,
+    sender: sender,
+    recipient: recipient
+  }))
+
+;; Emit mint event following SIP-010 specification
+(define-private (emit-mint-event (amount uint) (recipient principal))
+  (print {
+    type: "ft_mint_event",
+    token-contract: (as-contract tx-sender),
+    amount: amount,
+    recipient: recipient
+  }))
+
+;; ============================================================================
+;; TRANSFER HELPER FUNCTIONS
+;; ============================================================================
+
 ;; Check if sender has sufficient balance for transfer
 (define-private (check-balance (amount uint) (sender principal))
   (let ((sender-balance (default-to u0 (map-get? balances sender))))
     (asserts! (>= sender-balance amount) ERR-INSUFFICIENT-BALANCE)
     (ok sender-balance)))
+
 ;; Update balances atomically for transfer (optimized)
 (define-private (update-balances (amount uint) (sender principal) (recipient principal) (sender-balance uint))
   (let ((new-sender-balance (- sender-balance amount))
@@ -91,43 +134,10 @@
     (match (safe-add recipient-balance amount)
       success (begin (map-set balances recipient success) (ok true))
       error error)))
-;; Main Transfer Function
 
-;; Transfer tokens from sender to recipient
-(define-public (transfer (amount uint) (sender principal) (recipient principal) (memo (optional (buff 34))))
-  (begin
-    ;; Validate caller is the sender
-    (asserts! (is-eq tx-sender sender) ERR-UNAUTHORIZED)
-    ;; Validate transfer parameters
-    (try! (validate-transfer amount sender recipient))
-    ;; Check sufficient balance
-    (let ((sender-balance (try! (check-balance amount sender))))
-      ;; Update balances
-      (try! (update-balances amount sender recipient sender-balance))
-      ;; Emit transfer event
-      (emit-transfer-event amount sender recipient)
-      ;; Return success
-      (ok true))))
-;; Event Emission Functions
-
-;; Emit transfer event following SIP-010 specification
-(define-private (emit-transfer-event (amount uint) (sender principal) (recipient principal))
-  (print {
-    type: "ft_transfer_event",
-    token-contract: (as-contract tx-sender),
-    amount: amount,
-    sender: sender,
-    recipient: recipient
-  }))
-;; Emit mint event following SIP-010 specification
-(define-private (emit-mint-event (amount uint) (recipient principal))
-  (print {
-    type: "ft_mint_event",
-    token-contract: (as-contract tx-sender),
-    amount: amount,
-    recipient: recipient
-  }))
-;; Minting Functions
+;; ============================================================================
+;; MINTING FUNCTIONS
+;; ============================================================================
 
 ;; Private mint function for creating new tokens (optimized)
 (define-private (mint (amount uint) (recipient principal))
@@ -147,36 +157,65 @@
             (ok true))
           error error)
       error error)))
-;; Contract Initialization
+
+;; ============================================================================
+;; SIP-010 PUBLIC INTERFACE
+;; ============================================================================
+
+;; Get token name
+(define-read-only (get-name)
+  (ok CONTRACT-NAME))
+
+;; Get token symbol
+(define-read-only (get-symbol)
+  (ok CONTRACT-SYMBOL))
+
+;; Get token decimals
+(define-read-only (get-decimals)
+  (ok CONTRACT-DECIMALS))
+
+;; Get token URI for metadata
+(define-read-only (get-token-uri)
+  (ok (some CONTRACT-URI)))
+
+;; Get balance for a principal (returns 0 if never held tokens)
+(define-read-only (get-balance (who principal))
+  (begin
+    (try! (validate-balance-query who))
+    (ok (default-to u0 (map-get? balances who)))))
+
+;; Get total supply of tokens
+(define-read-only (get-total-supply)
+  (ok (var-get total-supply)))
+
+;; Transfer tokens from sender to recipient
+(define-public (transfer (amount uint) (sender principal) (recipient principal) (memo (optional (buff 34))))
+  (begin
+    ;; Validate caller is the sender
+    (asserts! (is-eq tx-sender sender) ERR-UNAUTHORIZED)
+    ;; Validate transfer parameters
+    (try! (validate-transfer amount sender recipient))
+    ;; Check sufficient balance
+    (let ((sender-balance (try! (check-balance amount sender))))
+      ;; Update balances
+      (try! (update-balances amount sender recipient sender-balance))
+      ;; Emit transfer event
+      (emit-transfer-event amount sender recipient)
+      ;; Return success
+      (ok true))))
+
+;; ============================================================================
+;; CONTRACT INITIALIZATION
+;; ============================================================================
 
 ;; Initialize contract with initial token supply to deployer
 (begin
   (try! (mint INITIAL-SUPPLY tx-sender)))
-;; Safe Arithmetic Functions
 
-;; Safe addition with overflow protection
-(define-private (safe-add (a uint) (b uint))
-  (let ((result (+ a b)))
-    (asserts! (>= result a) ERR-ARITHMETIC-OVERFLOW)
-    (ok result)))
+;; ============================================================================
+;; SIP-010 COMPLIANCE VALIDATION
+;; ============================================================================
 
-;; Safe subtraction with underflow protection  
-(define-private (safe-sub (a uint) (b uint))
-  (asserts! (>= a b) ERR-ARITHMETIC-UNDERFLOW)
-  (ok (- a b)))
-;; Additional Input Sanitization
-
-;; Validate principal is not contract address (additional security)
-(define-private (validate-principal-not-contract (who principal))
-  (asserts! (not (is-eq who (as-contract tx-sender))) ERR-INVALID-PRINCIPAL)
-  (ok true))
-
-;; Enhanced balance validation
-(define-private (validate-balance-query (who principal))
-  (begin
-    (asserts! (is-standard who) ERR-INVALID-PRINCIPAL)
-    (ok true)))
-;; SIP-010 Trait Implementation Validation
 ;; This contract implements all required SIP-010 functions:
 ;; - transfer: ✓ Implemented with proper validation and events
 ;; - get-name: ✓ Returns token name
