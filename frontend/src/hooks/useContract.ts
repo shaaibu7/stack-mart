@@ -253,6 +253,25 @@ export const useContract = () => {
     }
   }, [API_URL, CONTRACT_ID]);
 
+  const getSellerReputation = useCallback(async (principal: string) => {
+    try {
+      const response = await fetch(`${API_URL}/v2/contracts/call-read/${CONTRACT_ID}/get-seller-reputation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sender: principal,
+          arguments: [principal],
+        }),
+      });
+
+      if (!response.ok) return null;
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching seller reputation:', error);
+      return null;
+    }
+  }, [API_URL, CONTRACT_ID]);
+
   const getBuyerReputation = useCallback(async (principal: string) => {
     try {
       const response = await fetch(`${API_URL}/v2/contracts/call-read/${CONTRACT_ID}/get-buyer-reputation`, {
@@ -312,6 +331,11 @@ export const useContract = () => {
     }
   }, [API_URL, CONTRACT_ID]);
 
+  const toggleWishlist = useCallback(async (listingId: number) => {
+    console.log('Toggling wishlist for:', listingId);
+    return Promise.resolve({ success: true });
+  }, []);
+
   return {
     getListing,
     getEscrowStatus,
@@ -323,6 +347,8 @@ export const useContract = () => {
     getTransactionHistory,
     getSellerReputation,
     getBuyerReputation,
+    getWishlist,
+    getPriceHistory,
+    toggleWishlist,
   };
 };
-
