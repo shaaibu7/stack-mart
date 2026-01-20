@@ -6,9 +6,15 @@ const deployer = accounts.get("deployer")!;
 const wallet1 = accounts.get("wallet_1")!;
 const wallet2 = accounts.get("wallet_2")!;
 
+/**
+ * SP-010 Token Contract Test Suite
+ * 
+ * Comprehensive tests for SIP-010 compliant fungible token
+ * covering all functionality and edge cases.
+ */
 describe("SP-010 Token Contract", () => {
   beforeEach(() => {
-    // Contract is automatically deployed with initial supply
+    // Contract is automatically deployed with initial supply to deployer
   });
 
   describe("Metadata Functions", () => {
