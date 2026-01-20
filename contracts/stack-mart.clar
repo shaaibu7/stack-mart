@@ -161,6 +161,18 @@
   { listing-id: uint }
   { history: (list 10 { price: uint, block-height: uint }) })
 
+(define-public (update-listing-price (id uint) (new-price uint))
+  (let (
+    (listing (unwrap! (map-get? listings { id: id }) ERR_NOT_FOUND))
+    (current-history (get history (default-to { history: (list) } (map-get? price-history { listing-id: id }))))
+  )
+    (asserts! (is-eq (get seller listing) tx-sender) ERR_NOT_OWNER)
+    (map-set listings { id: id } (merge listing { price: new-price }))
+    (map-set price-history 
+      { listing-id: id } 
+      { history: (unwrap! (as-max-len? (append current-history { price: new-price, block-height: burn-block-height }) u10) (err u500)) })
+    (ok true)))
+
 (define-read-only (get-wishlist (user principal))
   (ok (default-to { listing-ids: (list) } (map-get? wishlists { user: user }))))
 
