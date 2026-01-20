@@ -3,7 +3,17 @@ import { useContract } from '../hooks/useContract';
 import { useStacks } from '../hooks/useStacks';
 import { BuyListing } from './BuyListing';
 import { EscrowManagement } from './EscrowManagement';
+import { PriceHistory } from './PriceHistory';
 import { formatAddress, formatSTX } from '../utils/validation';
+
+// ... (keep the rest of the imports and state)
+
+<div style={{ marginTop: '20px', padding: '15px', border: '1px solid #eee', borderRadius: '4px' }}>
+  <PriceHistory listingId={listingId} />
+</div>
+    </div >
+  );
+};
 
 interface ListingDetailsProps {
   listingId: number;
@@ -86,7 +96,7 @@ export const ListingDetails = ({ listingId, onClose }: ListingDetailsProps) => {
 
       <div style={{ border: '1px solid #ddd', borderRadius: '8px', padding: '30px', marginBottom: '20px' }}>
         <h1>Listing #{listingId}</h1>
-        
+
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '20px' }}>
           <div>
             <p><strong>Seller:</strong></p>
