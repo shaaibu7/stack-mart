@@ -33,3 +33,6 @@
 ;; Get token decimals
 (define-read-only (get-decimals)
   (ok CONTRACT-DECIMALS))
+;; Get token URI for metadata
+(define-read-only (get-token-uri)
+  (ok (some CONTRACT-URI)))
