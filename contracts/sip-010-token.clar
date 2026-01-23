@@ -177,3 +177,19 @@
     (map-delete blacklisted-addresses address)
     (print {action: "unblacklist-address", address: address})
     (ok true)))
+;; Fee structure for transfers
+(define-data-var transfer-fee-rate uint u100) ;; 1% = 100 basis points
+(define-data-var fee-recipient principal contract-owner)
+
+;; Get current transfer fee rate
+(define-read-only (get-transfer-fee-rate)
+  (var-get transfer-fee-rate))
+
+;; Set transfer fee rate (owner only)
+(define-public (set-transfer-fee-rate (new-rate uint))
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (asserts! (<= new-rate u1000) err-invalid-amount) ;; Max 10%
+    (var-set transfer-fee-rate new-rate)
+    (print {action: "set-transfer-fee-rate", new-rate: new-rate})
+    (ok true)))
