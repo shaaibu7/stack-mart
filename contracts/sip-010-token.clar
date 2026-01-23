@@ -55,3 +55,13 @@
 ;; Get token URI
 (define-read-only (get-token-uri)
   (ok token-uri))
+;; Transfer function
+(define-public (transfer (amount uint) (from principal) (to principal) (memo (optional (buff 34))))
+  (begin
+    (asserts! (or (is-eq from tx-sender) (is-eq from contract-caller)) err-not-token-owner)
+    (asserts! (> amount u0) err-invalid-amount)
+    (let ((from-balance (default-to u0 (map-get? token-balances from))))
+      (asserts! (>= from-balance amount) err-insufficient-balance)
+      (try! (ft-transfer? smt-token amount from to))
+      (print {action: "transfer", from: from, to: to, amount: amount, memo: memo})
+      (ok true))))
