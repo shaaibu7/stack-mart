@@ -235,3 +235,25 @@
 ;; Get staked balance
 (define-read-only (get-staked-balance (staker principal))
   (default-to u0 (map-get? staked-balances staker)))
+;; Governance functionality
+(define-map proposals uint {title: (string-ascii 100), description: (string-ascii 500), votes-for: uint, votes-against: uint, end-block: uint, executed: bool})
+(define-map votes {proposal-id: uint, voter: principal} bool)
+(define-data-var proposal-counter uint u0)
+(define-data-var min-proposal-threshold uint u1000000) ;; 1M tokens to create proposal
+
+;; Create proposal
+(define-public (create-proposal (title (string-ascii 100)) (description (string-ascii 500)) (voting-period uint))
+  (let ((proposal-id (+ (var-get proposal-counter) u1))
+        (proposer-balance (unwrap! (get-balance tx-sender) err-insufficient-balance)))
+    (asserts! (>= (unwrap-panic proposer-balance) (var-get min-proposal-threshold)) err-insufficient-balance)
+    (map-set proposals proposal-id {
+      title: title,
+      description: description,
+      votes-for: u0,
+      votes-against: u0,
+      end-block: (+ block-height voting-period),
+      executed: false
+    })
+    (var-set proposal-counter proposal-id)
+    (print {action: "create-proposal", proposal-id: proposal-id, title: title})
+    (ok proposal-id)))
