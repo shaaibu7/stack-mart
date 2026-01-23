@@ -135,3 +135,17 @@
   (match previous-result
     success (transfer (get amount transfer-data) tx-sender (get recipient transfer-data) (get memo transfer-data))
     error (err error)))
+;; Pause/unpause functionality
+(define-data-var contract-paused bool false)
+
+;; Check if contract is paused
+(define-read-only (is-paused)
+  (var-get contract-paused))
+
+;; Pause contract (owner only)
+(define-public (pause-contract)
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (var-set contract-paused true)
+    (print {action: "pause-contract"})
+    (ok true)))
