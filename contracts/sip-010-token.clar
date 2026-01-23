@@ -170,3 +170,10 @@
     (map-set blacklisted-addresses address true)
     (print {action: "blacklist-address", address: address})
     (ok true)))
+;; Remove address from blacklist (owner only)
+(define-public (unblacklist-address (address principal))
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (map-delete blacklisted-addresses address)
+    (print {action: "unblacklist-address", address: address})
+    (ok true)))
