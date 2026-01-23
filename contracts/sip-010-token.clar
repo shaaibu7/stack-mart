@@ -204,3 +204,20 @@
 ;; Calculate transfer fee
 (define-read-only (calculate-fee (amount uint))
   (/ (* amount (var-get transfer-fee-rate)) u10000))
+;; Staking functionality
+(define-map staked-balances principal uint)
+(define-map staking-rewards principal uint)
+(define-data-var total-staked uint u0)
+(define-data-var reward-rate uint u500) ;; 5% APY = 500 basis points
+
+;; Stake tokens
+(define-public (stake-tokens (amount uint))
+  (let ((current-balance (unwrap! (get-balance tx-sender) err-insufficient-balance))
+        (current-staked (default-to u0 (map-get? staked-balances tx-sender))))
+    (asserts! (> amount u0) err-invalid-amount)
+    (asserts! (>= (unwrap-panic current-balance) amount) err-insufficient-balance)
+    (try! (ft-transfer? smt-token amount tx-sender (as-contract tx-sender)))
+    (map-set staked-balances tx-sender (+ current-staked amount))
+    (var-set total-staked (+ (var-get total-staked) amount))
+    (print {action: "stake-tokens", staker: tx-sender, amount: amount})
+    (ok true)))
