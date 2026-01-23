@@ -65,3 +65,14 @@
       (try! (ft-transfer? smt-token amount from to))
       (print {action: "transfer", from: from, to: to, amount: amount, memo: memo})
       (ok true))))
+;; Define the fungible token
+(define-fungible-token smt-token total-supply)
+
+;; Mint function (owner only)
+(define-public (mint (amount uint) (recipient principal))
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (asserts! (> amount u0) err-invalid-amount)
+    (try! (ft-mint? smt-token amount recipient))
+    (print {action: "mint", recipient: recipient, amount: amount})
+    (ok true)))
