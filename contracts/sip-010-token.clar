@@ -257,3 +257,17 @@
     (var-set proposal-counter proposal-id)
     (print {action: "create-proposal", proposal-id: proposal-id, title: title})
     (ok proposal-id)))
+;; Vote on proposal
+(define-public (vote-on-proposal (proposal-id uint) (vote-for bool))
+  (let ((proposal (unwrap! (map-get? proposals proposal-id) (err u404)))
+        (voter-balance (unwrap! (get-balance tx-sender) err-insufficient-balance))
+        (has-voted (default-to false (map-get? votes {proposal-id: proposal-id, voter: tx-sender}))))
+    (asserts! (not has-voted) (err u105)) ;; Already voted
+    (asserts! (< block-height (get end-block proposal)) (err u106)) ;; Voting ended
+    (asserts! (> (unwrap-panic voter-balance) u0) err-insufficient-balance)
+    (map-set votes {proposal-id: proposal-id, voter: tx-sender} true)
+    (if vote-for
+      (map-set proposals proposal-id (merge proposal {votes-for: (+ (get votes-for proposal) (unwrap-panic voter-balance))}))
+      (map-set proposals proposal-id (merge proposal {votes-against: (+ (get votes-against proposal) (unwrap-panic voter-balance))})))
+    (print {action: "vote", proposal-id: proposal-id, voter: tx-sender, vote-for: vote-for, weight: (unwrap-panic voter-balance)})
+    (ok true)))
