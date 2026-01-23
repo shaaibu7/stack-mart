@@ -130,3 +130,8 @@
   (begin
     (asserts! (> (len transfers) u0) err-invalid-amount)
     (fold check-and-transfer transfers (ok true))))
+;; Helper function for batch transfer
+(define-private (check-and-transfer (transfer-data {recipient: principal, amount: uint, memo: (optional (buff 34))}) (previous-result (response bool uint)))
+  (match previous-result
+    success (transfer (get amount transfer-data) tx-sender (get recipient transfer-data) (get memo transfer-data))
+    error (err error)))
