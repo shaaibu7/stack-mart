@@ -271,3 +271,18 @@
       (map-set proposals proposal-id (merge proposal {votes-against: (+ (get votes-against proposal) (unwrap-panic voter-balance))})))
     (print {action: "vote", proposal-id: proposal-id, voter: tx-sender, vote-for: vote-for, weight: (unwrap-panic voter-balance)})
     (ok true)))
+;; Get proposal details
+(define-read-only (get-proposal (proposal-id uint))
+  (map-get? proposals proposal-id))
+
+;; Emergency functions
+(define-constant err-emergency-only (err u200))
+(define-data-var emergency-mode bool false)
+
+;; Enable emergency mode (owner only)
+(define-public (enable-emergency-mode)
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (var-set emergency-mode true)
+    (print {action: "enable-emergency-mode"})
+    (ok true)))
