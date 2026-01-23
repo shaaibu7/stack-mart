@@ -156,3 +156,17 @@
     (var-set contract-paused false)
     (print {action: "unpause-contract"})
     (ok true)))
+;; Blacklist functionality
+(define-map blacklisted-addresses principal bool)
+
+;; Check if address is blacklisted
+(define-read-only (is-blacklisted (address principal))
+  (default-to false (map-get? blacklisted-addresses address)))
+
+;; Add address to blacklist (owner only)
+(define-public (blacklist-address (address principal))
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (map-set blacklisted-addresses address true)
+    (print {action: "blacklist-address", address: address})
+    (ok true)))
