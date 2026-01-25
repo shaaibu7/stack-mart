@@ -897,3 +897,144 @@ describe("SIP-010 Token Contract", () => {
       expect(response.result).toBeErr(Cl.uint(105)); // Already voted
     });
   });
+  describe("Emergency Functions", () => {
+    it("should enable emergency mode successfully by owner", () => {
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "enable-emergency-mode",
+        [],
+        deployer
+      );
+      
+      expect(response.result).toBeOk(Cl.bool(true));
+    });
+
+    it("should disable emergency mode successfully by owner", () => {
+      // First enable
+      simnet.callPublicFn("sip-010-token", "enable-emergency-mode", [], deployer);
+      
+      // Then disable
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "disable-emergency-mode",
+        [],
+        deployer
+      );
+      
+      expect(response.result).toBeOk(Cl.bool(true));
+    });
+
+    it("should reject emergency mode toggle by non-owner", () => {
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "enable-emergency-mode",
+        [],
+        wallet1
+      );
+      
+      expect(response.result).toBeErr(Cl.uint(100)); // ERR-OWNER-ONLY
+    });
+
+    it("should perform emergency withdraw in emergency mode", () => {
+      // Enable emergency mode
+      simnet.callPublicFn("sip-010-token", "enable-emergency-mode", [], deployer);
+      
+      // Perform emergency withdraw
+      const withdrawAmount = 1000000;
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "emergency-withdraw",
+        [
+          Cl.uint(withdrawAmount),
+          Cl.principal(wallet1)
+        ],
+        deployer
+      );
+      
+      expect(response.result).toBeOk(Cl.bool(true));
+    });
+
+    it("should reject emergency withdraw when not in emergency mode", () => {
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "emergency-withdraw",
+        [
+          Cl.uint(1000000),
+          Cl.principal(wallet1)
+        ],
+        deployer
+      );
+      
+      expect(response.result).toBeErr(Cl.uint(200)); // ERR-EMERGENCY-ONLY
+    });
+  });
+
+  describe("Edge Cases and Error Handling", () => {
+    it("should handle maximum uint values correctly", () => {
+      const maxUint = "340282366920938463463374607431768211455"; // 2^128 - 1
+      
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "transfer",
+        [
+          Cl.uint(maxUint),
+          Cl.principal(deployer),
+          Cl.principal(wallet1),
+          Cl.none()
+        ],
+        deployer
+      );
+      
+      expect(response.result).toBeErr(Cl.uint(102)); // ERR-INSUFFICIENT-BALANCE
+    });
+
+    it("should handle zero balance operations correctly", () => {
+      // Try to transfer from account with zero balance
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "transfer",
+        [
+          Cl.uint(1),
+          Cl.principal(wallet3),
+          Cl.principal(wallet1),
+          Cl.none()
+        ],
+        wallet3
+      );
+      
+      expect(response.result).toBeErr(Cl.uint(102)); // ERR-INSUFFICIENT-BALANCE
+    });
+
+    it("should maintain total supply invariant after operations", () => {
+      const initialSupply = simnet.callReadOnlyFn("sip-010-token", "get-total-supply", [], deployer);
+      
+      // Perform various operations
+      simnet.callPublicFn(
+        "sip-010-token",
+        "transfer",
+        [Cl.uint(1000000), Cl.principal(deployer), Cl.principal(wallet1), Cl.none()],
+        deployer
+      );
+      
+      simnet.callPublicFn(
+        "sip-010-token",
+        "mint",
+        [Cl.uint(500000), Cl.principal(wallet2)],
+        deployer
+      );
+      
+      simnet.callPublicFn(
+        "sip-010-token",
+        "burn",
+        [Cl.uint(250000), Cl.principal(wallet2)],
+        wallet2
+      );
+      
+      // Check final supply
+      const finalSupply = simnet.callReadOnlyFn("sip-010-token", "get-total-supply", [], deployer);
+      const expectedSupply = 1000000000000000 + 500000 - 250000; // initial + mint - burn
+      
+      expect(finalSupply.result).toBeOk(Cl.uint(expectedSupply));
+    });
+  });
+});
