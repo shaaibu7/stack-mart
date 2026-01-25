@@ -456,3 +456,96 @@ describe("SIP-010 Token Contract", () => {
       expect(response.result).toBeErr(Cl.uint(102)); // ERR-INSUFFICIENT-BALANCE
     });
   });
+  describe("Batch Transfer Function", () => {
+    it("should execute batch transfers successfully", () => {
+      const transfers = [
+        { recipient: wallet1, amount: 1000000, memo: Cl.none() },
+        { recipient: wallet2, amount: 2000000, memo: Cl.none() },
+        { recipient: wallet3, amount: 1500000, memo: Cl.none() }
+      ];
+      
+      const transfersList = Cl.list(transfers.map(t => 
+        Cl.tuple({
+          recipient: Cl.principal(t.recipient),
+          amount: Cl.uint(t.amount),
+          memo: t.memo
+        })
+      ));
+      
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "batch-transfer",
+        [transfersList],
+        deployer
+      );
+      
+      expect(response.result).toBeOk(Cl.bool(true));
+      
+      // Check all recipient balances
+      const balance1 = simnet.callReadOnlyFn("sip-010-token", "get-balance", [Cl.principal(wallet1)], deployer);
+      const balance2 = simnet.callReadOnlyFn("sip-010-token", "get-balance", [Cl.principal(wallet2)], deployer);
+      const balance3 = simnet.callReadOnlyFn("sip-010-token", "get-balance", [Cl.principal(wallet3)], deployer);
+      
+      expect(balance1.result).toBeOk(Cl.uint(1000000));
+      expect(balance2.result).toBeOk(Cl.uint(2000000));
+      expect(balance3.result).toBeOk(Cl.uint(1500000));
+    });
+
+    it("should reject empty batch transfer", () => {
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "batch-transfer",
+        [Cl.list([])],
+        deployer
+      );
+      
+      expect(response.result).toBeErr(Cl.uint(103)); // ERR-INVALID-AMOUNT
+    });
+  });
+
+  describe("Pause/Unpause Functions", () => {
+    it("should pause contract successfully by owner", () => {
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "pause-contract",
+        [],
+        deployer
+      );
+      
+      expect(response.result).toBeOk(Cl.bool(true));
+      
+      // Check pause status
+      const isPaused = simnet.callReadOnlyFn("sip-010-token", "is-paused", [], deployer);
+      expect(isPaused.result).toBe(Cl.bool(true));
+    });
+
+    it("should unpause contract successfully by owner", () => {
+      // First pause
+      simnet.callPublicFn("sip-010-token", "pause-contract", [], deployer);
+      
+      // Then unpause
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "unpause-contract",
+        [],
+        deployer
+      );
+      
+      expect(response.result).toBeOk(Cl.bool(true));
+      
+      // Check pause status
+      const isPaused = simnet.callReadOnlyFn("sip-010-token", "is-paused", [], deployer);
+      expect(isPaused.result).toBe(Cl.bool(false));
+    });
+
+    it("should reject pause by non-owner", () => {
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "pause-contract",
+        [],
+        wallet1
+      );
+      
+      expect(response.result).toBeErr(Cl.uint(100)); // ERR-OWNER-ONLY
+    });
+  });
