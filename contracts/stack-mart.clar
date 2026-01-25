@@ -533,8 +533,8 @@
                   , rejection-reason: (some reason) })
               true)
             ;; Update reputation - failed transaction
-            (update-reputation (get seller listing) false)
-            (update-reputation tx-sender false)
+            (update-reputation (get seller listing) false u0)
+            (update-reputation tx-sender false u0)
             ;; Record transaction history
             (let ((price (get amount escrow)))
               (begin
