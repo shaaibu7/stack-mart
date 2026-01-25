@@ -1119,7 +1119,51 @@
             (ok false))))
     ERR_NOT_FOUND))
 
-(define-read-only (get-auction (auction-id uint))
-  (match (map-get? auctions { id: auction-id })
-    auction (ok auction)
+;; Rating system for completed transactions
+(define-public (rate-transaction (counterparty principal) (rating uint))
+  (begin
+    (asserts! (<= rating u5) ERR_BAD_ROYALTY) ;; 1-5 star rating
+    (asserts! (>= rating u1) ERR_BAD_ROYALTY)
+    ;; Update seller reputation with rating
+    (let ((current-rep (default-to { successful-txs: u0, failed-txs: u0, rating-sum: u0, rating-count: u0, total-volume: u0 } 
+                                   (map-get? reputation-seller { seller: counterparty }))))
+      (map-set reputation-seller
+        { seller: counterparty }
+        { successful-txs: (get successful-txs current-rep)
+        , failed-txs: (get failed-txs current-rep)
+        , rating-sum: (+ (get rating-sum current-rep) rating)
+        , rating-count: (+ (get rating-count current-rep) u1)
+        , total-volume: (get total-volume current-rep) }))
+    (ok true)))
+
+;; Get average rating for a seller
+(define-read-only (get-seller-average-rating (seller principal))
+  (let ((rep (default-to { successful-txs: u0, failed-txs: u0, rating-sum: u0, rating-count: u0, total-volume: u0 } 
+                         (map-get? reputation-seller { seller: seller }))))
+    (if (> (get rating-count rep) u0)
+      (ok (/ (get rating-sum rep) (get rating-count rep)))
+      (ok u0))))
+
+;; Listing categories and search
+(define-map listing-categories
+  { listing-id: uint }
+  { category: (string-ascii 50)
+  , tags: (list 5 (string-ascii 20))
+  })
+
+(define-public (set-listing-category (listing-id uint) (category (string-ascii 50)) (tags (list 5 (string-ascii 20))))
+  (match (map-get? listings { id: listing-id })
+    listing
+      (begin
+        (asserts! (is-eq tx-sender (get seller listing)) ERR_NOT_OWNER)
+        (map-set listing-categories
+          { listing-id: listing-id }
+          { category: category
+          , tags: tags })
+        (ok true))
+    ERR_NOT_FOUND))
+
+(define-read-only (get-listing-category (listing-id uint))
+  (match (map-get? listing-categories { listing-id: listing-id })
+    category-data (ok category-data)
     ERR_NOT_FOUND))
