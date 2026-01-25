@@ -380,3 +380,79 @@ describe("SIP-010 Token Contract", () => {
       expect(allowance.result).toBeOk(Cl.uint(0));
     });
   });
+  describe("Transfer From Function", () => {
+    beforeEach(() => {
+      // Approve wallet1 to spend from deployer
+      simnet.callPublicFn(
+        "sip-010-token",
+        "approve",
+        [Cl.principal(wallet1), Cl.uint(5000000)],
+        deployer
+      );
+    });
+
+    it("should transfer from approved account successfully", () => {
+      const transferAmount = 2000000;
+      
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "transfer-from",
+        [
+          Cl.uint(transferAmount),
+          Cl.principal(deployer),
+          Cl.principal(wallet2),
+          Cl.none()
+        ],
+        wallet1 // Approved spender
+      );
+      
+      expect(response.result).toBeOk(Cl.bool(true));
+      
+      // Check balances
+      const ownerBalance = simnet.callReadOnlyFn("sip-010-token", "get-balance", [Cl.principal(deployer)], deployer);
+      const recipientBalance = simnet.callReadOnlyFn("sip-010-token", "get-balance", [Cl.principal(wallet2)], deployer);
+      
+      expect(recipientBalance.result).toBeOk(Cl.uint(transferAmount));
+      
+      // Check remaining allowance
+      const allowance = simnet.callReadOnlyFn(
+        "sip-010-token",
+        "get-allowance",
+        [Cl.principal(deployer), Cl.principal(wallet1)],
+        deployer
+      );
+      expect(allowance.result).toBeOk(Cl.uint(3000000)); // 5M - 2M
+    });
+
+    it("should reject transfer from with insufficient allowance", () => {
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "transfer-from",
+        [
+          Cl.uint(6000000), // More than approved
+          Cl.principal(deployer),
+          Cl.principal(wallet2),
+          Cl.none()
+        ],
+        wallet1
+      );
+      
+      expect(response.result).toBeErr(Cl.uint(102)); // ERR-INSUFFICIENT-BALANCE
+    });
+
+    it("should reject transfer from without approval", () => {
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "transfer-from",
+        [
+          Cl.uint(1000000),
+          Cl.principal(deployer),
+          Cl.principal(wallet1),
+          Cl.none()
+        ],
+        wallet2 // Not approved
+      );
+      
+      expect(response.result).toBeErr(Cl.uint(102)); // ERR-INSUFFICIENT-BALANCE
+    });
+  });
