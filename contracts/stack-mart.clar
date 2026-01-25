@@ -634,22 +634,28 @@
 
 
 ;; Helper function to update reputation (optimized)
-(define-private (update-reputation (principal principal) (success bool) (amount uint)))
-(total-volume: (if success (+ (get total-volume current-rep) amount) (get total-volume current-rep)))
-  (let ((current-rep (default-to DEFAULT_REPUTATION (map-get? reputation { principal: principal }))))
-    (if success
-      (map-set reputation
-        { principal: principal }
-        { successful-txs: (+ (get successful-txs current-rep) u1)
-        , failed-txs: (get failed-txs current-rep)
-        , rating-sum: (get rating-sum current-rep)
-        , rating-count: (get rating-count current-rep) })
-      (map-set reputation
-        { principal: principal }
-        { successful-txs: (get successful-txs current-rep)
-        , failed-txs: (+ (get failed-txs current-rep) u1)
-        , rating-sum: (get rating-sum current-rep)
-        , rating-count: (get rating-count current-rep) }))))
+(define-private (update-reputation (user principal) (success bool) (amount uint))
+  (let ((current-seller-rep (default-to { successful-txs: u0, failed-txs: u0, rating-sum: u0, rating-count: u0, total-volume: u0 } 
+                                        (map-get? reputation-seller { seller: user })))
+        (current-buyer-rep (default-to { successful-txs: u0, failed-txs: u0, rating-sum: u0, rating-count: u0, total-volume: u0 } 
+                                       (map-get? reputation-buyer { buyer: user }))))
+    (begin
+      ;; Update seller reputation
+      (map-set reputation-seller
+        { seller: user }
+        { successful-txs: (if success (+ (get successful-txs current-seller-rep) u1) (get successful-txs current-seller-rep))
+        , failed-txs: (if success (get failed-txs current-seller-rep) (+ (get failed-txs current-seller-rep) u1))
+        , rating-sum: (get rating-sum current-seller-rep)
+        , rating-count: (get rating-count current-seller-rep)
+        , total-volume: (if success (+ (get total-volume current-seller-rep) amount) (get total-volume current-seller-rep)) })
+      ;; Update buyer reputation
+      (map-set reputation-buyer
+        { buyer: user }
+        { successful-txs: (if success (+ (get successful-txs current-buyer-rep) u1) (get successful-txs current-buyer-rep))
+        , failed-txs: (if success (get failed-txs current-buyer-rep) (+ (get failed-txs current-buyer-rep) u1))
+        , rating-sum: (get rating-sum current-buyer-rep)
+        , rating-count: (get rating-count current-buyer-rep)
+        , total-volume: (if success (+ (get total-volume current-buyer-rep) amount) (get total-volume current-buyer-rep)) }))))
 
 ;; Helper function to record transaction history
 (define-private (record-transaction (principal principal) (listing-id uint) (counterparty principal) (amount uint) (completed bool))
