@@ -1309,6 +1309,59 @@
         (ok true))
     ERR_NOT_FOUND))
 
-(define-read-only (get-listing-status (listing-id uint))
-  (ok (default-to { active: true, featured: false, promoted-until-block: u0 } 
-                  (map-get? listing-status { listing-id: listing-id }))))
+;; Bulk operations for efficiency
+(define-public (bulk-create-listings (listings-data (list 10 { price: uint, royalty-bips: uint, royalty-recipient: principal })))
+  (let ((results (map create-single-listing listings-data)))
+    (ok results)))
+
+(define-private (create-single-listing (listing-data { price: uint, royalty-bips: uint, royalty-recipient: principal }))
+  (let ((price (get price listing-data))
+        (royalty-bips (get royalty-bips listing-data))
+        (royalty-recipient (get royalty-recipient listing-data)))
+    (if (<= royalty-bips MAX_ROYALTY_BIPS)
+      (let ((id (var-get next-id)))
+        (begin
+          (map-set listings
+            { id: id }
+            { seller: tx-sender
+            , price: price
+            , royalty-bips: royalty-bips
+            , royalty-recipient: royalty-recipient
+            , nft-contract: none
+            , token-id: none
+            , license-terms: none })
+          (var-set next-id (+ id u1))
+          id))
+      u0))) ;; Return 0 for failed listings
+
+;; Emergency functions for admin
+(define-public (emergency-pause-listing (listing-id uint))
+  (begin
+    (asserts! (is-eq tx-sender (var-get admin)) ERR_NOT_OWNER)
+    (map-set listing-status
+      { listing-id: listing-id }
+      { active: false
+      , featured: false
+      , promoted-until-block: u0 })
+    (ok true)))
+
+(define-public (emergency-refund-escrow (listing-id uint))
+  (begin
+    (asserts! (is-eq tx-sender (var-get admin)) ERR_NOT_OWNER)
+    (match (map-get? escrows { listing-id: listing-id })
+      escrow
+        (let ((buyer (get buyer escrow))
+              (amount (get amount escrow)))
+          (begin
+            ;; Refund to buyer
+            (try! (as-contract (stx-transfer? amount tx-sender buyer)))
+            ;; Update escrow state
+            (map-set escrows
+              { listing-id: listing-id }
+              { buyer: buyer
+              , amount: amount
+              , created-at-block: (get created-at-block escrow)
+              , state: "cancelled"
+              , timeout-block: (get timeout-block escrow) })
+            (ok true)))
+      ERR_ESCROW_NOT_FOUND)))
