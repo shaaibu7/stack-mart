@@ -549,3 +549,127 @@ describe("SIP-010 Token Contract", () => {
       expect(response.result).toBeErr(Cl.uint(100)); // ERR-OWNER-ONLY
     });
   });
+  describe("Blacklist Functions", () => {
+    it("should blacklist address successfully by owner", () => {
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "blacklist-address",
+        [Cl.principal(wallet1)],
+        deployer
+      );
+      
+      expect(response.result).toBeOk(Cl.bool(true));
+      
+      // Check blacklist status
+      const isBlacklisted = simnet.callReadOnlyFn(
+        "sip-010-token",
+        "is-blacklisted",
+        [Cl.principal(wallet1)],
+        deployer
+      );
+      expect(isBlacklisted.result).toBe(Cl.bool(true));
+    });
+
+    it("should unblacklist address successfully by owner", () => {
+      // First blacklist
+      simnet.callPublicFn(
+        "sip-010-token",
+        "blacklist-address",
+        [Cl.principal(wallet1)],
+        deployer
+      );
+      
+      // Then unblacklist
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "unblacklist-address",
+        [Cl.principal(wallet1)],
+        deployer
+      );
+      
+      expect(response.result).toBeOk(Cl.bool(true));
+      
+      // Check blacklist status
+      const isBlacklisted = simnet.callReadOnlyFn(
+        "sip-010-token",
+        "is-blacklisted",
+        [Cl.principal(wallet1)],
+        deployer
+      );
+      expect(isBlacklisted.result).toBe(Cl.bool(false));
+    });
+
+    it("should reject blacklist by non-owner", () => {
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "blacklist-address",
+        [Cl.principal(wallet2)],
+        wallet1
+      );
+      
+      expect(response.result).toBeErr(Cl.uint(100)); // ERR-OWNER-ONLY
+    });
+  });
+
+  describe("Fee Management Functions", () => {
+    it("should set transfer fee rate successfully by owner", () => {
+      const newRate = 250; // 2.5%
+      
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "set-transfer-fee-rate",
+        [Cl.uint(newRate)],
+        deployer
+      );
+      
+      expect(response.result).toBeOk(Cl.bool(true));
+      
+      // Check fee rate
+      const feeRate = simnet.callReadOnlyFn("sip-010-token", "get-transfer-fee-rate", [], deployer);
+      expect(feeRate.result).toBe(Cl.uint(newRate));
+    });
+
+    it("should reject excessive fee rate", () => {
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "set-transfer-fee-rate",
+        [Cl.uint(1500)], // 15% - too high
+        deployer
+      );
+      
+      expect(response.result).toBeErr(Cl.uint(103)); // ERR-INVALID-AMOUNT
+    });
+
+    it("should set fee recipient successfully by owner", () => {
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "set-fee-recipient",
+        [Cl.principal(wallet1)],
+        deployer
+      );
+      
+      expect(response.result).toBeOk(Cl.bool(true));
+    });
+
+    it("should calculate fee correctly", () => {
+      const amount = 1000000; // 1 token
+      const feeRate = 100; // 1%
+      
+      // Set fee rate first
+      simnet.callPublicFn(
+        "sip-010-token",
+        "set-transfer-fee-rate",
+        [Cl.uint(feeRate)],
+        deployer
+      );
+      
+      const calculatedFee = simnet.callReadOnlyFn(
+        "sip-010-token",
+        "calculate-fee",
+        [Cl.uint(amount)],
+        deployer
+      );
+      
+      expect(calculatedFee.result).toBe(Cl.uint(10000)); // 1% of 1M = 10K
+    });
+  });
