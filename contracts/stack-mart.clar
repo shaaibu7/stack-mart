@@ -179,8 +179,6 @@
     (ok (var-set fee-recipient new-recipient))))
 
 (define-public (update-listing-price (id uint) (new-price uint))
-(define-public (set-marketplace-fee (new-fee uint)) (begin (asserts! (is-eq tx-sender (var-get admin)) ERR_NOT_OWNER) (ok (var-set marketplace-fee-bips new-fee))))
-(define-public (set-fee-recipient (new-recipient principal)) (begin (asserts! (is-eq tx-sender (var-get admin)) ERR_NOT_OWNER) (ok (var-set fee-recipient new-recipient))))
   (let (
     (listing (unwrap! (map-get? listings { id: id }) ERR_NOT_FOUND))
     (current-history (get history (default-to { history: (list) } (map-get? price-history { listing-id: id }))))
@@ -189,7 +187,6 @@
     (map-set listings { id: id } (merge listing { price: new-price }))
     (map-set price-history 
       { listing-id: id } 
-(define-read-only (is-wishlisted (user principal) (listing-id uint)) (let ((current-wishlist (get listing-ids (default-to { listing-ids: (list) } (map-get? wishlists { user: user }))))) (ok (is-some (index-of current-wishlist listing-id)))))
       { history: (unwrap! (as-max-len? (append current-history { price: new-price, block-height: burn-block-height }) u10) (err u500)) })
     (ok true)))
 
