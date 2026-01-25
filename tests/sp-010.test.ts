@@ -245,3 +245,138 @@ describe("SIP-010 Token Contract", () => {
       expect(response.result).toBeErr(Cl.uint(103)); // ERR-INVALID-AMOUNT
     });
   });
+  describe("Allowance Functions", () => {
+    it("should approve allowance successfully", () => {
+      const allowanceAmount = 3000000;
+      
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "approve",
+        [
+          Cl.principal(wallet1),
+          Cl.uint(allowanceAmount)
+        ],
+        deployer
+      );
+      
+      expect(response.result).toBeOk(Cl.bool(true));
+      
+      // Check allowance
+      const allowance = simnet.callReadOnlyFn(
+        "sip-010-token",
+        "get-allowance",
+        [Cl.principal(deployer), Cl.principal(wallet1)],
+        deployer
+      );
+      expect(allowance.result).toBeOk(Cl.uint(allowanceAmount));
+    });
+
+    it("should reject zero allowance approval", () => {
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "approve",
+        [
+          Cl.principal(wallet1),
+          Cl.uint(0)
+        ],
+        deployer
+      );
+      
+      expect(response.result).toBeErr(Cl.uint(103)); // ERR-INVALID-AMOUNT
+    });
+
+    it("should increase allowance successfully", () => {
+      // First approve some amount
+      simnet.callPublicFn(
+        "sip-010-token",
+        "approve",
+        [Cl.principal(wallet1), Cl.uint(1000000)],
+        deployer
+      );
+      
+      // Then increase
+      const increaseAmount = 500000;
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "increase-allowance",
+        [
+          Cl.principal(wallet1),
+          Cl.uint(increaseAmount)
+        ],
+        deployer
+      );
+      
+      expect(response.result).toBeOk(Cl.bool(true));
+      
+      // Check new allowance
+      const allowance = simnet.callReadOnlyFn(
+        "sip-010-token",
+        "get-allowance",
+        [Cl.principal(deployer), Cl.principal(wallet1)],
+        deployer
+      );
+      expect(allowance.result).toBeOk(Cl.uint(1500000));
+    });
+
+    it("should decrease allowance successfully", () => {
+      // First approve some amount
+      simnet.callPublicFn(
+        "sip-010-token",
+        "approve",
+        [Cl.principal(wallet1), Cl.uint(2000000)],
+        deployer
+      );
+      
+      // Then decrease
+      const decreaseAmount = 500000;
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "decrease-allowance",
+        [
+          Cl.principal(wallet1),
+          Cl.uint(decreaseAmount)
+        ],
+        deployer
+      );
+      
+      expect(response.result).toBeOk(Cl.bool(true));
+      
+      // Check new allowance
+      const allowance = simnet.callReadOnlyFn(
+        "sip-010-token",
+        "get-allowance",
+        [Cl.principal(deployer), Cl.principal(wallet1)],
+        deployer
+      );
+      expect(allowance.result).toBeOk(Cl.uint(1500000));
+    });
+
+    it("should revoke allowance successfully", () => {
+      // First approve some amount
+      simnet.callPublicFn(
+        "sip-010-token",
+        "approve",
+        [Cl.principal(wallet1), Cl.uint(1000000)],
+        deployer
+      );
+      
+      // Then revoke
+      const response = simnet.callPublicFn(
+        "sip-010-token",
+        "revoke-allowance",
+        [Cl.principal(wallet1)],
+        deployer
+      );
+      
+      expect(response.result).toBeOk(Cl.bool(true));
+      
+      // Check allowance is zero
+      const allowance = simnet.callReadOnlyFn(
+        "sip-010-token",
+        "get-allowance",
+        [Cl.principal(deployer), Cl.principal(wallet1)],
+        deployer
+      );
+      expect(allowance.result).toBeOk(Cl.uint(0));
+    });
+  });
