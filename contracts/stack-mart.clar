@@ -1163,7 +1163,113 @@
         (ok true))
     ERR_NOT_FOUND))
 
-(define-read-only (get-listing-category (listing-id uint))
-  (match (map-get? listing-categories { listing-id: listing-id })
-    category-data (ok category-data)
+;; Offer system - buyers can make offers on listings
+(define-data-var next-offer-id uint u1)
+
+(define-map offers
+  { id: uint }
+  { listing-id: uint
+  , buyer: principal
+  , amount: uint
+  , expires-at-block: uint
+  , accepted: bool
+  , cancelled: bool
+  })
+
+(define-public (make-offer (listing-id uint) (amount uint) (duration-blocks uint))
+  (match (map-get? listings { id: listing-id })
+    listing
+      (let ((offer-id (var-get next-offer-id)))
+        (begin
+          (asserts! (not (is-eq tx-sender (get seller listing))) ERR_NOT_OWNER)
+          (asserts! (> amount u0) ERR_INVALID_LISTING)
+          ;; Transfer offer amount to contract (escrow)
+          (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
+          (map-set offers
+            { id: offer-id }
+            { listing-id: listing-id
+            , buyer: tx-sender
+            , amount: amount
+            , expires-at-block: (+ burn-block-height duration-blocks)
+            , accepted: false
+            , cancelled: false })
+          (var-set next-offer-id (+ offer-id u1))
+          (ok offer-id)))
+    ERR_NOT_FOUND))
+
+(define-public (accept-offer (offer-id uint))
+  (match (map-get? offers { id: offer-id })
+    offer
+      (match (map-get? listings { id: (get listing-id offer) })
+        listing
+          (begin
+            (asserts! (is-eq tx-sender (get seller listing)) ERR_NOT_OWNER)
+            (asserts! (not (get accepted offer)) ERR_INVALID_STATE)
+            (asserts! (not (get cancelled offer)) ERR_INVALID_STATE)
+            (asserts! (< burn-block-height (get expires-at-block offer)) ERR_TIMEOUT_NOT_REACHED)
+            (let ((price (get amount offer))
+                  (buyer (get buyer offer))
+                  (royalty-bips (get royalty-bips listing))
+                  (royalty-recipient (get royalty-recipient listing))
+                  (royalty (/ (* price royalty-bips) BPS_DENOMINATOR))
+                  (marketplace-fee (/ (* price (var-get marketplace-fee-bips)) BPS_DENOMINATOR))
+                  (seller-share (- (- price royalty) marketplace-fee)))
+              (begin
+                ;; Transfer payments from escrowed offer
+                (try! (as-contract (stx-transfer? marketplace-fee tx-sender (var-get fee-recipient))))
+                (if (> royalty u0)
+                  (try! (as-contract (stx-transfer? royalty tx-sender royalty-recipient)))
+                  true)
+                (try! (as-contract (stx-transfer? seller-share tx-sender tx-sender)))
+                ;; Transfer NFT if present
+                (match (get nft-contract listing)
+                  nft-contract-principal
+                    (match (get token-id listing)
+                      token-id-value
+                        (match (contract-call? nft-contract-principal transfer token-id-value tx-sender buyer)
+                          (ok transfer-success)
+                            (asserts! transfer-success ERR_NFT_TRANSFER_FAILED)
+                          (err error-code)
+                            (err error-code))
+                      true)
+                  true)
+                ;; Mark offer as accepted
+                (map-set offers
+                  { id: offer-id }
+                  { listing-id: (get listing-id offer)
+                  , buyer: buyer
+                  , amount: price
+                  , expires-at-block: (get expires-at-block offer)
+                  , accepted: true
+                  , cancelled: false })
+                ;; Remove listing
+                (map-delete listings { id: (get listing-id offer) })
+                (ok true))))
+        ERR_NOT_FOUND)
+    ERR_NOT_FOUND))
+
+(define-public (cancel-offer (offer-id uint))
+  (match (map-get? offers { id: offer-id })
+    offer
+      (begin
+        (asserts! (is-eq tx-sender (get buyer offer)) ERR_NOT_OWNER)
+        (asserts! (not (get accepted offer)) ERR_INVALID_STATE)
+        (asserts! (not (get cancelled offer)) ERR_INVALID_STATE)
+        ;; Refund offer amount
+        (try! (as-contract (stx-transfer? (get amount offer) tx-sender (get buyer offer))))
+        ;; Mark offer as cancelled
+        (map-set offers
+          { id: offer-id }
+          { listing-id: (get listing-id offer)
+          , buyer: (get buyer offer)
+          , amount: (get amount offer)
+          , expires-at-block: (get expires-at-block offer)
+          , accepted: false
+          , cancelled: true })
+        (ok true))
+    ERR_NOT_FOUND))
+
+(define-read-only (get-offer (offer-id uint))
+  (match (map-get? offers { id: offer-id })
+    offer (ok offer)
     ERR_NOT_FOUND))
