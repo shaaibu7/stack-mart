@@ -1269,7 +1269,46 @@
         (ok true))
     ERR_NOT_FOUND))
 
-(define-read-only (get-offer (offer-id uint))
-  (match (map-get? offers { id: offer-id })
-    offer (ok offer)
+;; Listing visibility and status management
+(define-map listing-status
+  { listing-id: uint }
+  { active: bool
+  , featured: bool
+  , promoted-until-block: uint
+  })
+
+(define-public (set-listing-active (listing-id uint) (active bool))
+  (match (map-get? listings { id: listing-id })
+    listing
+      (begin
+        (asserts! (is-eq tx-sender (get seller listing)) ERR_NOT_OWNER)
+        (map-set listing-status
+          { listing-id: listing-id }
+          { active: active
+          , featured: (get featured (default-to { active: true, featured: false, promoted-until-block: u0 } 
+                                                (map-get? listing-status { listing-id: listing-id })))
+          , promoted-until-block: (get promoted-until-block (default-to { active: true, featured: false, promoted-until-block: u0 } 
+                                                                        (map-get? listing-status { listing-id: listing-id }))) })
+        (ok true))
     ERR_NOT_FOUND))
+
+(define-public (promote-listing (listing-id uint) (duration-blocks uint))
+  (match (map-get? listings { id: listing-id })
+    listing
+      (begin
+        (asserts! (is-eq tx-sender (get seller listing)) ERR_NOT_OWNER)
+        ;; Charge promotion fee (simplified - in full implementation would have fee structure)
+        (let ((promotion-fee u1000)) ;; Fixed fee for now
+          (try! (stx-transfer? promotion-fee tx-sender (var-get fee-recipient))))
+        (map-set listing-status
+          { listing-id: listing-id }
+          { active: (get active (default-to { active: true, featured: false, promoted-until-block: u0 } 
+                                            (map-get? listing-status { listing-id: listing-id })))
+          , featured: true
+          , promoted-until-block: (+ burn-block-height duration-blocks) })
+        (ok true))
+    ERR_NOT_FOUND))
+
+(define-read-only (get-listing-status (listing-id uint))
+  (ok (default-to { active: true, featured: false, promoted-until-block: u0 } 
+                  (map-get? listing-status { listing-id: listing-id }))))
