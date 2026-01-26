@@ -160,12 +160,28 @@ describe("SP-010 Token Contract", () => {
         "sp-010",
         "transfer",
         [
-          Cl.uint(2000000000000), // More than total supply
+          Cl.uint(INITIAL_SUPPLY + 1), // More than total supply
           Cl.principal(deployer),
           Cl.principal(wallet1),
           Cl.none()
         ],
         deployer
+      );
+      
+      expect(response.result).toBeErr(Cl.uint(1)); // ERR-INSUFFICIENT-BALANCE
+    });
+
+    it("should reject transfer from empty wallet", () => {
+      const response = simnet.callPublicFn(
+        "sp-010",
+        "transfer",
+        [
+          Cl.uint(ONE_TOKEN),
+          Cl.principal(wallet1), // wallet1 has no tokens
+          Cl.principal(wallet2),
+          Cl.none()
+        ],
+        wallet1
       );
       
       expect(response.result).toBeErr(Cl.uint(1)); // ERR-INSUFFICIENT-BALANCE
