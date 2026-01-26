@@ -77,7 +77,7 @@ describe("SP-010 Token Contract", () => {
 
   describe("Transfer Function", () => {
     it("should transfer tokens successfully", () => {
-      const transferAmount = 1000000; // 1 token with 6 decimals
+      const transferAmount = ONE_TOKEN;
       
       const response = simnet.callPublicFn(
         "sp-010",
@@ -97,8 +97,62 @@ describe("SP-010 Token Contract", () => {
       const senderBalance = simnet.callReadOnlyFn("sp-010", "get-balance", [Cl.principal(deployer)], deployer);
       const recipientBalance = simnet.callReadOnlyFn("sp-010", "get-balance", [Cl.principal(wallet1)], deployer);
       
-      expect(senderBalance.result).toBeOk(Cl.uint(1000000000000 - transferAmount));
+      expect(senderBalance.result).toBeOk(Cl.uint(INITIAL_SUPPLY - transferAmount));
       expect(recipientBalance.result).toBeOk(Cl.uint(transferAmount));
+    });
+
+    it("should handle multiple sequential transfers", () => {
+      // First transfer
+      simnet.callPublicFn(
+        "sp-010",
+        "transfer",
+        [Cl.uint(ONE_TOKEN), Cl.principal(deployer), Cl.principal(wallet1), Cl.none()],
+        deployer
+      );
+      
+      // Second transfer
+      simnet.callPublicFn(
+        "sp-010",
+        "transfer",
+        [Cl.uint(HALF_TOKEN), Cl.principal(deployer), Cl.principal(wallet2), Cl.none()],
+        deployer
+      );
+      
+      // Verify final balances
+      const deployerBalance = simnet.callReadOnlyFn("sp-010", "get-balance", [Cl.principal(deployer)], deployer);
+      const wallet1Balance = simnet.callReadOnlyFn("sp-010", "get-balance", [Cl.principal(wallet1)], deployer);
+      const wallet2Balance = simnet.callReadOnlyFn("sp-010", "get-balance", [Cl.principal(wallet2)], deployer);
+      
+      expect(deployerBalance.result).toBeOk(Cl.uint(INITIAL_SUPPLY - ONE_TOKEN - HALF_TOKEN));
+      expect(wallet1Balance.result).toBeOk(Cl.uint(ONE_TOKEN));
+      expect(wallet2Balance.result).toBeOk(Cl.uint(HALF_TOKEN));
+    });
+
+    it("should allow wallet-to-wallet transfers", () => {
+      // First, give wallet1 some tokens
+      simnet.callPublicFn(
+        "sp-010",
+        "transfer",
+        [Cl.uint(ONE_TOKEN * 2), Cl.principal(deployer), Cl.principal(wallet1), Cl.none()],
+        deployer
+      );
+      
+      // Then wallet1 transfers to wallet2
+      const response = simnet.callPublicFn(
+        "sp-010",
+        "transfer",
+        [Cl.uint(ONE_TOKEN), Cl.principal(wallet1), Cl.principal(wallet2), Cl.none()],
+        wallet1
+      );
+      
+      expect(response.result).toBeOk(Cl.bool(true));
+      
+      // Verify balances
+      const wallet1Balance = simnet.callReadOnlyFn("sp-010", "get-balance", [Cl.principal(wallet1)], deployer);
+      const wallet2Balance = simnet.callReadOnlyFn("sp-010", "get-balance", [Cl.principal(wallet2)], deployer);
+      
+      expect(wallet1Balance.result).toBeOk(Cl.uint(ONE_TOKEN));
+      expect(wallet2Balance.result).toBeOk(Cl.uint(ONE_TOKEN));
     });
 
     it("should reject transfer with insufficient balance", () => {
