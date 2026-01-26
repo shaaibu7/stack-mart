@@ -8,6 +8,12 @@ const accounts = simnet.getAccounts();
 const deployer = accounts.get("deployer")!;
 const wallet1 = accounts.get("wallet_1")!;
 const wallet2 = accounts.get("wallet_2")!;
+const wallet3 = accounts.get("wallet_3")!;
+
+// Test constants
+const INITIAL_SUPPLY = 1000000000000;
+const ONE_TOKEN = 1000000; // 1 token with 6 decimals
+const HALF_TOKEN = 500000; // 0.5 token with 6 decimals
 
 /**
  * SP-010 Token Contract Test Suite
