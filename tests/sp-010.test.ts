@@ -51,7 +51,7 @@ describe("SP-010 Token Contract", () => {
   describe("Balance and Supply", () => {
     it("should return deployer initial balance", () => {
       const response = simnet.callReadOnlyFn("sp-010", "get-balance", [Cl.principal(deployer)], deployer);
-      expect(response.result).toBeOk(Cl.uint(1000000000000));
+      expect(response.result).toBeOk(Cl.uint(INITIAL_SUPPLY));
     });
 
     it("should return zero balance for new principal", () => {
@@ -61,7 +61,17 @@ describe("SP-010 Token Contract", () => {
 
     it("should return correct total supply", () => {
       const response = simnet.callReadOnlyFn("sp-010", "get-total-supply", [], deployer);
-      expect(response.result).toBeOk(Cl.uint(1000000000000));
+      expect(response.result).toBeOk(Cl.uint(INITIAL_SUPPLY));
+    });
+
+    it("should handle balance queries for multiple wallets", () => {
+      const wallet1Balance = simnet.callReadOnlyFn("sp-010", "get-balance", [Cl.principal(wallet1)], deployer);
+      const wallet2Balance = simnet.callReadOnlyFn("sp-010", "get-balance", [Cl.principal(wallet2)], deployer);
+      const wallet3Balance = simnet.callReadOnlyFn("sp-010", "get-balance", [Cl.principal(wallet3)], deployer);
+      
+      expect(wallet1Balance.result).toBeOk(Cl.uint(0));
+      expect(wallet2Balance.result).toBeOk(Cl.uint(0));
+      expect(wallet3Balance.result).toBeOk(Cl.uint(0));
     });
   });
 
