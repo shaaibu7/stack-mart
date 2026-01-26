@@ -208,7 +208,7 @@ describe("SP-010 Token Contract", () => {
         "sp-010",
         "transfer",
         [
-          Cl.uint(1000000),
+          Cl.uint(ONE_TOKEN),
           Cl.principal(deployer),
           Cl.principal(deployer),
           Cl.none()
@@ -224,7 +224,7 @@ describe("SP-010 Token Contract", () => {
         "sp-010",
         "transfer",
         [
-          Cl.uint(1000000),
+          Cl.uint(ONE_TOKEN),
           Cl.principal(deployer),
           Cl.principal(wallet1),
           Cl.none()
@@ -233,6 +233,23 @@ describe("SP-010 Token Contract", () => {
       );
       
       expect(response.result).toBeErr(Cl.uint(3)); // ERR-UNAUTHORIZED
+    });
+
+    it("should handle memo parameter correctly", () => {
+      const memo = Cl.bufferFromAscii("test transfer");
+      const response = simnet.callPublicFn(
+        "sp-010",
+        "transfer",
+        [
+          Cl.uint(ONE_TOKEN),
+          Cl.principal(deployer),
+          Cl.principal(wallet1),
+          Cl.some(memo)
+        ],
+        deployer
+      );
+      
+      expect(response.result).toBeOk(Cl.bool(true));
     });
   });
 });
