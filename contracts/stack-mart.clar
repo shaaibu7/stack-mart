@@ -28,6 +28,19 @@
   , action-count: uint
   })
 
+;; Event logging system
+(define-data-var next-event-id uint u1)
+
+(define-map events
+  { event-id: uint }
+  { event-type: (string-ascii 50)
+  , principal: principal
+  , listing-id: (optional uint)
+  , amount: (optional uint)
+  , timestamp: uint
+  , data: (optional (string-ascii 500))
+  })
+
 (define-constant RATE_LIMIT_WINDOW u10) ;; 10 blocks
 (define-constant MAX_ACTIONS_PER_WINDOW u5)
 
@@ -113,6 +126,32 @@
 
 (define-private (verify-ownership (owner principal) (caller principal))
   (is-eq owner caller))
+
+;; Event logging helpers
+(define-private (log-event (event-type (string-ascii 50)) (principal principal) (listing-id (optional uint)) (amount (optional uint)) (data (optional (string-ascii 500))))
+  (let ((event-id (var-get next-event-id)))
+    (begin
+      (map-set events
+        { event-id: event-id }
+        { event-type: event-type
+        , principal: principal
+        , listing-id: listing-id
+        , amount: amount
+        , timestamp: burn-block-height
+        , data: data })
+      (var-set next-event-id (+ event-id u1))
+      event-id)))
+
+(define-read-only (get-event (event-id uint))
+  (match (map-get? events { event-id: event-id })
+    event (ok event)
+    ERR_NOT_FOUND))
+
+(define-read-only (get-latest-events (count uint))
+  (let ((current-id (var-get next-event-id)))
+    (if (> current-id count)
+      (ok (- current-id count))
+      (ok u1))))
 
 ;; Bundle and pack constants
 (define-constant MAX_BUNDLE_SIZE u10)
@@ -350,6 +389,8 @@
         , token-id: none
         , license-terms: none })
       (var-set next-id (+ id u1))
+      ;; Log listing creation event
+      (log-event "listing-created" tx-sender (some id) (some price) none)
       (clear-reentrancy)
       (ok id))))
 
@@ -382,6 +423,8 @@
         , token-id: (some token-id)
         , license-terms: (some license-terms) })
       (var-set next-id (+ id u1))
+      ;; Log NFT listing creation event
+      (log-event "nft-listing-created" tx-sender (some id) (some price) (some license-terms))
       (clear-reentrancy)
       (ok id))))
 
@@ -456,6 +499,8 @@
               , state: "pending"
               , timeout-block: timeout-block
               , stx-held: true })
+            ;; Log escrow creation event
+            (log-event "escrow-created" tx-sender (some id) (some price) none)
             (clear-reentrancy)
             (ok true))))
     ERR_NOT_FOUND))
@@ -506,6 +551,8 @@
                   , state: "delivered"
                   , timeout-block: (get timeout-block escrow)
                   , stx-held: (get stx-held escrow) })
+                ;; Log delivery attestation event
+                (log-event "delivery-attested" tx-sender (some listing-id) none (some "delivery-hash-provided"))
                 (ok true))))
         ERR_NOT_FOUND)
     ERR_ESCROW_NOT_FOUND))
