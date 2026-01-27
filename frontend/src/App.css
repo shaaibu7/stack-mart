@@ -7,9 +7,10 @@
 
 /* Header Styles */
 header {
-  background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
-  color: white;
-  box-shadow: var(--shadow-lg);
+  background: #ffffff;
+  color: var(--gray-900);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  border-bottom: 1px solid var(--gray-200);
   position: sticky;
   top: 0;
   z-index: 100;
@@ -24,7 +25,7 @@ header h1 {
   font-size: 1.875rem;
   font-weight: 700;
   letter-spacing: -0.025em;
-  background: linear-gradient(to right, white, rgba(255, 255, 255, 0.9));
+  background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -88,7 +89,8 @@ section h2 {
 .btn-primary {
   background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
   color: white;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 2px 8px rgba(0, 102, 255, 0.25);
+  font-weight: 600;
 }
 
 .btn-primary:hover:not(:disabled) {

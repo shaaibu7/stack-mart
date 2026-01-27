@@ -1,0 +1,34 @@
+# SP-010 Token Deployment Configuration
+# SIP-010 Compliant Fungible Token
+
+plan:
+  id: 0
+  name: "SP-010 Token Deployment"
+  description: "Deploy SP-010 SIP-010 compliant fungible token contract"
+  
+batches:
+  - id: 0
+    transactions:
+      - contract-publish:
+          contract-name: "sp-010"
+          expected-sender: "ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM"
+          cost: 75000
+          path: "contracts/sp-010.clar"
+          clarity-version: 2
+          
+# Deployment Parameters
+initial_supply: 1000000000000  # 1 million tokens with 6 decimals
+token_name: "SP-010"
+token_symbol: "SP010"
+decimals: 6
+metadata_uri: "https://example.com/sp010-metadata.json"
+
+# Network Configuration
+networks:
+  simnet:
+    node_rpc_api: "http://localhost:20443"
+    node_p2p_api: "http://localhost:20444"
+  testnet:
+    node_rpc_api: "https://stacks-node-api.testnet.stacks.co"
+  mainnet:
+    node_rpc_api: "https://stacks-node-api.mainnet.stacks.co"

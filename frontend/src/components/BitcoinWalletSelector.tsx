@@ -161,10 +161,15 @@ export const BitcoinWalletSelector = ({
           {shortAddress}
         </div>
         <button 
-          className="btn btn-secondary btn-sm"
+          className="btn btn-outline btn-sm"
           onClick={handleDisconnect} 
           disabled={isLoading}
-          style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)', color: 'white', border: '1px solid rgba(255, 255, 255, 0.3)' }}
+          style={{
+            backgroundColor: '#ffffff',
+            color: 'var(--primary)',
+            border: '1px solid var(--primary)',
+            padding: '0.4rem 0.9rem'
+          }}
         >
           {isLoading ? (
             <>

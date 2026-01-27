@@ -2,7 +2,7 @@ import { useWalletBalance } from '../hooks/useWalletBalance';
 import { useAllWallets } from '../hooks/useAllWallets';
 import { formatEVMAddress } from '../utils/appkit';
 import { formatWalletKitAddress } from '../utils/walletkit';
-import { formatAddress } from '../utils/validation';
+import { formatAddress, getStacksAddress } from '../utils/validation';
 
 /**
  * Wallet Balance Display Component
@@ -45,7 +45,7 @@ export const WalletBalanceDisplay = () => {
       
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         {/* Stacks Balance */}
-        {stacks.isConnected && (stacks.userData as any)?.profile?.stxAddress && (
+        {stacks.isConnected && getStacksAddress(stacks.userData) && (
           <div style={{
             padding: '1rem',
             backgroundColor: 'rgba(99, 102, 241, 0.2)',
@@ -58,7 +58,7 @@ export const WalletBalanceDisplay = () => {
                   Stacks Wallet
                 </div>
                 <div style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.8)' }}>
-                  {formatAddress((stacks.userData as any)?.profile?.stxAddress?.mainnet || (stacks.userData as any)?.profile?.stxAddress?.testnet || '')}
+                  {formatAddress(getStacksAddress(stacks.userData) || '')}
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>

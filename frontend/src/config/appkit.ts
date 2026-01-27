@@ -10,6 +10,7 @@ const projectId = import.meta.env.VITE_REOWN_PROJECT_ID || '037216c37e770337c0cb
 const wagmiAdapter = new WagmiAdapter({
   networks: [mainnet, sepolia],
   projectId,
+  ssr: false,
 })
 
 // Create AppKit instance for modern wallet connection UI

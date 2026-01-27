@@ -1,13 +1,20 @@
 :root {
-  /* Color Palette */
-  --primary: #667eea;
-  --primary-dark: #5568d3;
-  --primary-light: #8b9aff;
-  --secondary: #764ba2;
+  /* Professional Color Palette - Modern SaaS Theme */
+  --primary: #0066ff;
+  --primary-dark: #0052cc;
+  --primary-light: #3385ff;
+  --primary-lighter: #66a3ff;
+  --secondary: #00d4aa;
+  --secondary-dark: #00b894;
+  --accent: #6366f1;
   --success: #10b981;
+  --success-dark: #059669;
   --warning: #f59e0b;
+  --warning-dark: #d97706;
   --error: #ef4444;
+  --error-dark: #dc2626;
   --info: #3b82f6;
+  --info-dark: #2563eb;
   
   /* Neutral Colors */
   --gray-50: #f9fafb;

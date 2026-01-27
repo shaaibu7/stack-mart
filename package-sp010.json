@@ -1,0 +1,45 @@
+{
+  "name": "sp-010-token",
+  "version": "1.0.0",
+  "description": "SIP-010 compliant fungible token contract for Stacks blockchain",
+  "main": "contracts/sp-010.clar",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "deploy:testnet": "node scripts/deploy-sp010.js testnet",
+    "deploy:mainnet": "node scripts/deploy-sp010.js mainnet",
+    "check": "clarinet check",
+    "console": "clarinet console",
+    "example": "node examples/sp010-usage.js"
+  },
+  "keywords": [
+    "stacks",
+    "clarity",
+    "sip-010",
+    "fungible-token",
+    "blockchain",
+    "cryptocurrency"
+  ],
+  "author": "SP-010 Development Team",
+  "license": "MIT",
+  "dependencies": {
+    "@stacks/transactions": "^6.13.0",
+    "@stacks/network": "^6.13.0",
+    "@stacks/common": "^6.13.0"
+  },
+  "devDependencies": {
+    "@hirosystems/clarinet-cli": "^2.4.0",
+    "vitest": "^1.0.0",
+    "@vitest/coverage-v8": "^1.0.0",
+    "typescript": "^5.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/example/sp-010-token.git"
+  },
+  "bugs": {
+    "url": "https://github.com/example/sp-010-token/issues"
+  },
+  "homepage": "https://github.com/example/sp-010-token#readme"
+}

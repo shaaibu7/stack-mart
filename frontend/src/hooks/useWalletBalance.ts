@@ -2,7 +2,7 @@ import { useAccount, useBalance } from 'wagmi';
 import { useWalletKitLink } from '@walletkit/react-link';
 import { useStacks } from './useStacks';
 import { getStacksAddress } from '../utils/validation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 
 /**
  * Hook to get wallet balances across all connected wallets
@@ -24,7 +24,10 @@ export const useWalletBalance = () => {
   // Fetch WalletKit balance
   useEffect(() => {
     const fetchWalletKitBalance = async () => {
-      if (walletKit?.isConnected && walletKit?.address) {
+      const isConnected = walletKit?.isConnected;
+      const address = walletKit?.address;
+      
+      if (isConnected && address) {
         setIsLoading(true);
         try {
           // WalletKit balance fetching (if available)
@@ -43,40 +46,66 @@ export const useWalletBalance = () => {
     };
 
     fetchWalletKitBalance();
-  }, [walletKit?.isConnected, walletKit?.address]);
+  }, [walletKit]);
 
   // Fetch Stacks balance
+  const lastAddressRef = useRef<string | null>(null);
+  const balanceFetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
   useEffect(() => {
+    // Clear any pending fetch
+    if (balanceFetchTimeoutRef.current) {
+      clearTimeout(balanceFetchTimeoutRef.current);
+    }
+
     const fetchStacksBalance = async () => {
       if (!stacksConnected || !userData) {
         setStacksBalance(null);
+        lastAddressRef.current = null;
         return;
       }
 
       const address = getStacksAddress(userData);
       if (!address) {
         setStacksBalance(null);
+        lastAddressRef.current = null;
         return;
       }
 
-      setIsLoading(true);
-      try {
-        const response = await fetch(
-          `https://api.hiro.so/v2/accounts/${address}?proof=0`
-        );
-        if (response.ok) {
-          const data = await response.json();
-          const balance = (data.balance / 1000000).toFixed(6); // Convert microSTX to STX
-          setStacksBalance(balance);
-        }
-      } catch (error) {
-        console.error('Error fetching Stacks balance:', error);
-      } finally {
-        setIsLoading(false);
+      // Skip if same address
+      if (address === lastAddressRef.current) {
+        return;
       }
+
+      lastAddressRef.current = address;
+      setIsLoading(true);
+      
+      // Debounce the fetch
+      balanceFetchTimeoutRef.current = setTimeout(async () => {
+        try {
+          const response = await fetch(
+            `https://api.hiro.so/v2/accounts/${address}?proof=0`
+          );
+          if (response.ok) {
+            const data = await response.json();
+            const balance = (data.balance / 1000000).toFixed(6); // Convert microSTX to STX
+            setStacksBalance(balance);
+          }
+        } catch (error) {
+          console.error('Error fetching Stacks balance:', error);
+        } finally {
+          setIsLoading(false);
+        }
+      }, 300); // 300ms debounce
     };
 
     fetchStacksBalance();
+
+    return () => {
+      if (balanceFetchTimeoutRef.current) {
+        clearTimeout(balanceFetchTimeoutRef.current);
+      }
+    };
   }, [stacksConnected, userData]);
 
   return {

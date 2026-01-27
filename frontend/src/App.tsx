@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { WalletButton } from './components/WalletButton';
 import { LandingPage } from './components/LandingPage';
 import { CreateListing } from './components/CreateListing';
@@ -19,30 +19,20 @@ type TabType = 'listings' | 'bundles' | 'packs' | 'disputes' | 'dashboard';
 function App() {
   const { isConnected } = useStacks();
   const { getAllListings } = useContract();
-  const [showLanding, setShowLanding] = useState(() => {
-    // Check if user has visited before (stored in localStorage)
-    const hasVisited = localStorage.getItem('stackmart_has_visited');
-    return !hasVisited;
-  });
+  // Always start on the landing page, even after reload
+  const [showLanding, setShowLanding] = useState(true);
   const [listings, setListings] = useState<any[]>([]);
   const [selectedListingId, setSelectedListingId] = useState<number | null>(null);
   const [isLoadingListings, setIsLoadingListings] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Always start at listings tab (home)
-  const [activeTab, setActiveTab] = useState<TabType>(() => {
-    // Check if there's a saved tab preference, otherwise default to listings
-    const savedTab = localStorage.getItem('stackmart_active_tab') as TabType;
-    return savedTab && ['listings', 'bundles', 'packs', 'disputes', 'dashboard'].includes(savedTab) 
-      ? savedTab 
-      : 'listings';
-  });
+  // Always start at listings tab (home) when in the marketplace
+  const [activeTab, setActiveTab] = useState<TabType>('listings');
   const [disputeEscrowId, setDisputeEscrowId] = useState<number | null>(null);
 
   const goHome = () => {
     setSelectedListingId(null);
     setActiveTab('listings');
     setDisputeEscrowId(null);
-    localStorage.setItem('stackmart_active_tab', 'listings');
     // Scroll to top
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -51,7 +41,7 @@ function App() {
     setShowLanding(true);
   };
 
-  const loadListings = async () => {
+  const loadListings = useCallback(async () => {
     setIsLoadingListings(true);
     setError(null);
     try {
@@ -82,18 +72,26 @@ function App() {
     } finally {
       setIsLoadingListings(false);
     }
-  };
+  }, [getAllListings]);
 
   // Load listings from contract - with error handling
+  const hasLoadedListingsRef = useRef(false);
+  
   useEffect(() => {
     // Only load listings if not on landing page
-    if (showLanding) return;
+    if (showLanding) {
+      hasLoadedListingsRef.current = false;
+      return;
+    }
+    
+    // Only load once per marketplace entry
+    if (hasLoadedListingsRef.current) return;
+    
+    hasLoadedListingsRef.current = true;
     
     // Use setTimeout to ensure component is mounted
     const timer = setTimeout(() => {
-      try {
-        loadListings();
-      } catch (err) {
+      loadListings().catch((err) => {
         console.error('Error in loadListings:', err);
         setError('Failed to initialize listings');
         // Set mock data as fallback
@@ -104,30 +102,20 @@ function App() {
           'royalty-bips': 500,
           'royalty-recipient': 'SP3J75H6FYTCJJW5R0CHVGWDFN8JPZP3DD4DPJRSP',
         }]);
-      }
+      });
     }, 100);
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showLanding]);
+  }, [showLanding, loadListings]);
 
   const enterMarketplace = () => {
-    localStorage.setItem('stackmart_has_visited', 'true');
     setShowLanding(false);
     // Always go to listings (home) tab when entering marketplace
     setActiveTab('listings');
-    localStorage.setItem('stackmart_active_tab', 'listings');
     // Scroll to top
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Save tab preference when it changes
-  useEffect(() => {
-    if (!showLanding) {
-      localStorage.setItem('stackmart_active_tab', activeTab);
-    }
-  }, [activeTab, showLanding]);
-
-  // Show landing page if user hasn't visited (after all hooks are called)
+  // Show landing page first (after all hooks are called)
   if (showLanding) {
     return <LandingPage onEnter={enterMarketplace} />;
   }
@@ -136,20 +124,45 @@ function App() {
     return (
       <div className="App">
         <header>
-          <h1 
-            onClick={goHome}
-            style={{ 
-              cursor: 'pointer',
-              userSelect: 'none',
-              transition: 'opacity 0.2s'
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
-            onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
-            title="Click to go home"
-          >
-            🏠 StackMart Marketplace
-          </h1>
-          <WalletButton />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: '1rem' }}>
+            <div 
+              onClick={showLandingPage}
+              style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '0.5rem',
+                cursor: 'pointer',
+                transition: 'opacity 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
+              onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+              title="Click to go to home"
+            >
+              <div style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                border: '2px solid #333333',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#333333',
+                fontSize: '1.1rem'
+              }}>
+                🛍️
+              </div>
+              <span style={{
+                fontSize: '1.4rem',
+                fontWeight: 700,
+                color: '#333333'
+              }}>
+                StackMart
+              </span>
+            </div>
+            <div style={{ marginLeft: 'auto' }}>
+              <WalletButton />
+            </div>
+          </div>
         </header>
         <ListingDetails
           listingId={selectedListingId}
@@ -162,99 +175,157 @@ function App() {
   return (
     <div className="App">
       <header>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <h1 
-            onClick={goHome}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: '1rem' }}>
+          <div 
+            onClick={showLandingPage}
             style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.5rem',
               cursor: 'pointer',
-              userSelect: 'none',
-              transition: 'opacity 0.2s',
-              margin: 0
+              transition: 'opacity 0.2s'
             }}
             onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
             onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
-            title="Click to go home"
+            title="Click to go to home"
           >
-            🏠 StackMart Marketplace
-          </h1>
-          <button
-            onClick={showLandingPage}
-            className="btn btn-outline btn-sm"
-            style={{ 
-              fontSize: '0.85rem',
-              padding: '0.4rem 0.8rem'
-            }}
-            title="View landing page"
-          >
-            ℹ️ About
-          </button>
+            <div style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '8px',
+              border: '2px solid #333333',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#333333',
+              fontSize: '1.1rem'
+            }}>
+              🛍️
+            </div>
+            <span style={{
+              fontSize: '1.4rem',
+              fontWeight: 700,
+              color: '#333333'
+            }}>
+              StackMart
+            </span>
+          </div>
+          <div style={{ marginLeft: 'auto' }}>
+            <WalletButton />
+          </div>
         </div>
-        <WalletButton />
       </header>
 
-      <main>
-        {error && (
-          <div className="alert alert-error">
-            <strong>Error:</strong> {error}
-          </div>
-        )}
-
-        {/* Tab Navigation */}
-        <div style={{
+      <div style={{ display: 'flex', minHeight: 'calc(100vh - 80px)' }}>
+        {/* Sidebar Navigation */}
+        <aside style={{
+          width: '250px',
+          backgroundColor: '#f8f9fa',
+          borderRight: '1px solid #e0e0e0',
+          padding: '1.5rem 0',
           display: 'flex',
-          gap: '10px',
-          marginBottom: '2rem',
-          borderBottom: '2px solid var(--gray-200)',
-          paddingBottom: '10px',
-          alignItems: 'center'
+          flexDirection: 'column',
+          gap: '0.25rem'
         }}>
-          <button
-            className="btn btn-outline"
-            onClick={goHome}
-            style={{ 
-              borderRadius: '8px 8px 0 0',
-              marginRight: 'auto'
-            }}
-            title="Go to home (Listings)"
-          >
-            🏠 Home
-          </button>
           <button
             className={`btn ${activeTab === 'dashboard' ? 'btn-primary' : 'btn-outline'}`}
             onClick={() => setActiveTab('dashboard')}
-            style={{ borderRadius: '8px 8px 0 0' }}
+            style={{ 
+              borderRadius: '0',
+              margin: '0 0.75rem 0.25rem 0.75rem',
+              textAlign: 'left',
+              justifyContent: 'flex-start',
+              padding: '0.875rem 1rem',
+              width: 'calc(100% - 1.5rem)',
+              borderLeft: activeTab === 'dashboard' ? '3px solid var(--primary)' : '3px solid transparent',
+              backgroundColor: activeTab === 'dashboard' ? 'var(--primary)' : 'transparent',
+              color: activeTab === 'dashboard' ? '#ffffff' : 'var(--gray-700)',
+              fontWeight: activeTab === 'dashboard' ? '600' : '400'
+            }}
           >
             👤 Dashboard
           </button>
           <button
             className={`btn ${activeTab === 'listings' ? 'btn-primary' : 'btn-outline'}`}
             onClick={() => setActiveTab('listings')}
-            style={{ borderRadius: '8px 8px 0 0' }}
+            style={{ 
+              borderRadius: '0',
+              margin: '0 0.75rem',
+              textAlign: 'left',
+              justifyContent: 'flex-start',
+              padding: '0.875rem 1rem',
+              width: 'calc(100% - 1.5rem)',
+              borderLeft: activeTab === 'listings' ? '3px solid var(--primary)' : '3px solid transparent',
+              backgroundColor: activeTab === 'listings' ? 'var(--primary)' : 'transparent',
+              color: activeTab === 'listings' ? '#ffffff' : 'var(--gray-700)',
+              fontWeight: activeTab === 'listings' ? '600' : '400'
+            }}
           >
             🛍️ Listings
           </button>
           <button
             className={`btn ${activeTab === 'bundles' ? 'btn-primary' : 'btn-outline'}`}
             onClick={() => setActiveTab('bundles')}
-            style={{ borderRadius: '8px 8px 0 0' }}
+            style={{ 
+              borderRadius: '0',
+              margin: '0 0.75rem',
+              textAlign: 'left',
+              justifyContent: 'flex-start',
+              padding: '0.875rem 1rem',
+              width: 'calc(100% - 1.5rem)',
+              borderLeft: activeTab === 'bundles' ? '3px solid var(--primary)' : '3px solid transparent',
+              backgroundColor: activeTab === 'bundles' ? 'var(--primary)' : 'transparent',
+              color: activeTab === 'bundles' ? '#ffffff' : 'var(--gray-700)',
+              fontWeight: activeTab === 'bundles' ? '600' : '400'
+            }}
           >
             📦 Bundles
           </button>
           <button
             className={`btn ${activeTab === 'packs' ? 'btn-primary' : 'btn-outline'}`}
             onClick={() => setActiveTab('packs')}
-            style={{ borderRadius: '8px 8px 0 0' }}
+            style={{ 
+              borderRadius: '0',
+              margin: '0 0.75rem',
+              textAlign: 'left',
+              justifyContent: 'flex-start',
+              padding: '0.875rem 1rem',
+              width: 'calc(100% - 1.5rem)',
+              borderLeft: activeTab === 'packs' ? '3px solid var(--primary)' : '3px solid transparent',
+              backgroundColor: activeTab === 'packs' ? 'var(--primary)' : 'transparent',
+              color: activeTab === 'packs' ? '#ffffff' : 'var(--gray-700)',
+              fontWeight: activeTab === 'packs' ? '600' : '400'
+            }}
           >
             🎁 Packs
           </button>
           <button
             className={`btn ${activeTab === 'disputes' ? 'btn-primary' : 'btn-outline'}`}
             onClick={() => setActiveTab('disputes')}
-            style={{ borderRadius: '8px 8px 0 0' }}
+            style={{ 
+              borderRadius: '0',
+              margin: '0 0.75rem',
+              textAlign: 'left',
+              justifyContent: 'flex-start',
+              padding: '0.875rem 1rem',
+              width: 'calc(100% - 1.5rem)',
+              borderLeft: activeTab === 'disputes' ? '3px solid var(--primary)' : '3px solid transparent',
+              backgroundColor: activeTab === 'disputes' ? 'var(--primary)' : 'transparent',
+              color: activeTab === 'disputes' ? '#ffffff' : 'var(--gray-700)',
+              fontWeight: activeTab === 'disputes' ? '600' : '400'
+            }}
           >
             ⚖️ Disputes
           </button>
-        </div>
+        </aside>
+
+        {/* Main Content */}
+        <main style={{ flex: 1, padding: '2rem', overflow: 'auto' }}>
+          {error && (
+            <div className="alert alert-error">
+              <strong>Error:</strong> {error}
+            </div>
+          )}
 
         {/* Tab Content */}
         {activeTab === 'listings' && (
@@ -377,10 +448,11 @@ function App() {
           <Dashboard />
         )}
 
-        <section>
-          <ChainhookEvents />
-        </section>
-      </main>
+          <section>
+            <ChainhookEvents />
+          </section>
+        </main>
+      </div>
     </div>
   );
 }

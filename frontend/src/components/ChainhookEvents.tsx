@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useChainhooks } from '../hooks/useChainhooks';
 
 export const ChainhookEvents = () => {
@@ -10,40 +11,50 @@ export const ChainhookEvents = () => {
     getEscrowUpdates 
   } = useChainhooks();
 
+  const [dismissed, setDismissed] = useState(false);
+
   const latestListings = getLatestListings();
   const latestPurchases = getLatestPurchases();
   const escrowUpdates = getEscrowUpdates();
 
-  if (error) {
+  // If there's an error and it's not dismissed, show a small notification
+  if (error && !dismissed) {
     return (
       <div style={{ 
-        padding: '20px', 
+        padding: '12px 16px', 
         backgroundColor: '#fff3cd',
         border: '1px solid #ffc107',
-        borderRadius: '8px',
-        margin: '20px',
-        color: '#856404'
+        borderRadius: '6px',
+        margin: '10px 20px',
+        color: '#856404',
+        fontSize: '0.9em',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center'
       }}>
-        <h3>⚠️ Chainhook Server Unavailable</h3>
-        <p>Real-time events are not available. The chainhook server may not be running.</p>
-        <p style={{ fontSize: '0.9em', marginTop: '10px' }}>
-          To enable real-time events, start the chainhook server:
-        </p>
-        <code style={{ 
-          display: 'block', 
-          padding: '10px', 
-          backgroundColor: '#f8f9fa', 
-          borderRadius: '4px',
-          marginTop: '10px',
-          fontSize: '0.85em'
-        }}>
-          cd hooks-server && npm start
-        </code>
-        <p style={{ fontSize: '0.85em', marginTop: '10px', color: '#666' }}>
-          Server URL: {import.meta.env.VITE_CHAINHOOK_API_URL || 'http://localhost:3001'}
-        </p>
+        <span>⚠️ Chainhook server unavailable. Real-time events disabled.</span>
+        <button
+          onClick={() => setDismissed(true)}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: '#856404',
+            cursor: 'pointer',
+            fontSize: '18px',
+            padding: '0 8px',
+            marginLeft: '12px'
+          }}
+          aria-label="Dismiss"
+        >
+          ×
+        </button>
       </div>
     );
+  }
+
+  // If error is dismissed, don't show the component at all
+  if (error && dismissed) {
+    return null;
   }
 
   return (

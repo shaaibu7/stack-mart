@@ -1,0 +1,52 @@
+name: SP-010 Token Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'contracts/sp-010.clar'
+      - 'tests/sp-010.test.ts'
+      - '.github/workflows/test.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'contracts/sp-010.clar'
+      - 'tests/sp-010.test.ts'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run Clarinet tests
+      run: |
+        npm install -g @hirosystems/clarinet-cli
+        clarinet test
+        
+    - name: Run Vitest tests
+      run: npm test
+      
+    - name: Check contract syntax
+      run: clarinet check
+      
+    - name: Generate test coverage
+      run: npm run test:coverage
+      
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage/lcov.info
+        flags: unittests
+        name: sp-010-coverage

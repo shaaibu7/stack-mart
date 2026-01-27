@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { connect, isConnected, disconnect, getLocalStorage } from '@stacks/connect';
 import { STACKS_MAINNET, STACKS_TESTNET } from '@stacks/network';
 import { NETWORK } from '../config/contract';
@@ -10,12 +10,17 @@ export const useStacks = () => {
   // AppKit hooks for modern wallet UI
   const { address: appKitAddress, isConnected: isAppKitConnected } = useAccount();
   
+  const prevDataString = useRef<string>('');
+  
   const [userData, setUserData] = useState(() => {
     try {
       const data = getLocalStorage();
+      const dataString = data ? JSON.stringify(data) : '';
+      prevDataString.current = dataString;
       return data || undefined;
     } catch (error) {
       console.warn('Error loading user data:', error);
+      prevDataString.current = '';
       return undefined;
     }
   });
@@ -36,27 +41,35 @@ export const useStacks = () => {
         
         if (connected) {
           const data = getLocalStorage();
-          if (data) {
-            setUserData(data);
+          // Only update if data actually changed (compare JSON strings)
+          const dataString = data ? JSON.stringify(data) : '';
+          if (dataString !== prevDataString.current) {
+            prevDataString.current = dataString;
+            setUserData(data || undefined);
             setIsLoading(false);
-          } else {
-            setUserData(undefined);
           }
         } else {
-          setUserData(undefined);
+          // Only update if we had data before
+          if (prevDataString.current !== '') {
+            prevDataString.current = '';
+            setUserData(undefined);
+          }
         }
       } catch (error) {
         console.warn('Error in useStacks useEffect:', error);
         setIsStacksConnected(false);
-        setUserData(undefined);
+        if (prevDataString.current !== '') {
+          prevDataString.current = '';
+          setUserData(undefined);
+        }
       }
     };
 
     // Check immediately
     checkConnection();
 
-    // Poll for changes (in case wallet connects externally)
-    const interval = setInterval(checkConnection, 500);
+    // Poll for changes (in case wallet connects externally) - reduced frequency
+    const interval = setInterval(checkConnection, 2000); // Changed from 500ms to 2000ms
     
     // Also listen for storage events (when wallet connects in another tab)
     const handleStorageChange = (e: StorageEvent) => {

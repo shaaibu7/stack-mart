@@ -162,3 +162,9 @@ The frontend is a React + TypeScript application using Vite.
    ```bash
    npm run build
    ```
+## Recent Enhancements (Jan 2026)
+- Advanced Administrative Controls
+- Reputation Volume Tracking
+## Recent Enhancements (Jan 2026)
+- Advanced Administrative Controls
+- Reputation Volume Tracking

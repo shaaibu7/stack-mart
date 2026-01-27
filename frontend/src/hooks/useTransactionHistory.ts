@@ -1,7 +1,7 @@
 import { useAccount } from 'wagmi';
 import { useStacks } from './useStacks';
 import { getStacksAddress } from '../utils/validation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 
 interface Transaction {
   hash: string;
@@ -22,30 +22,49 @@ export const useTransactionHistory = () => {
   const [appKitTransactions, setAppKitTransactions] = useState<Transaction[]>([]);
   const [stacksTransactions, setStacksTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const loadingRef = useRef({ appKit: false, stacks: false });
+
+  const updateLoadingState = () => {
+    setIsLoading(loadingRef.current.appKit || loadingRef.current.stacks);
+  };
 
   // Fetch AppKit transactions
   useEffect(() => {
     const fetchAppKitTransactions = async () => {
       if (!appKitConnected || !appKitAddress) {
         setAppKitTransactions([]);
+        loadingRef.current.appKit = false;
+        updateLoadingState();
         return;
       }
 
-      setIsLoading(true);
+      loadingRef.current.appKit = true;
+      updateLoadingState();
       try {
         // In production, use a block explorer API or indexer
-        // For now, this is a placeholder
-        await fetch(
-          `https://api.etherscan.io/api?module=account&action=txlist&address=${appKitAddress}&startblock=0&endblock=99999999&sort=desc&apikey=YourApiKeyToken`
-        );
-        // Note: This requires an API key and proper error handling
+        // For now, this is a placeholder - transactions will be fetched via indexer or block explorer
+        // Note: This requires an API key from environment variables and proper error handling
+        // For demo purposes, we'll use empty array
+        const apiKey = import.meta.env.VITE_ETHERSCAN_API_KEY;
+        if (apiKey) {
+          const response = await fetch(
+            `https://api.etherscan.io/api?module=account&action=txlist&address=${appKitAddress}&startblock=0&endblock=99999999&sort=desc&apikey=${apiKey}`
+          );
+          if (response.ok) {
+            const data = await response.json();
+            // Parse and set transactions if API returns data
+            // For now, keeping empty array as placeholder
+            // TODO: Parse data.result and map to Transaction[] format
+          }
+        }
         // For demo purposes, we'll use empty array
         setAppKitTransactions([]);
       } catch (error) {
         console.error('Error fetching AppKit transactions:', error);
         setAppKitTransactions([]);
       } finally {
-        setIsLoading(false);
+        loadingRef.current.appKit = false;
+        updateLoadingState();
       }
     };
 
@@ -53,23 +72,36 @@ export const useTransactionHistory = () => {
   }, [appKitConnected, appKitAddress]);
 
   // Fetch Stacks transactions
+  const lastTxAddressRef = useRef<string | null>(null);
+  const txFetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
+    // Clear any pending fetch
+    if (txFetchTimeoutRef.current) {
+      clearTimeout(txFetchTimeoutRef.current);
+    }
+
     const fetchStacksTransactions = async () => {
       if (!stacksConnected || !userData) {
         setStacksTransactions([]);
+        loadingRef.current.stacks = false;
+        updateLoadingState();
         return;
       }
 
       const address = getStacksAddress(userData);
       if (!address) {
         setStacksTransactions([]);
+        loadingRef.current.stacks = false;
+        updateLoadingState();
         return;
       }
 
-      setIsLoading(true);
+      loadingRef.current.stacks = true;
+      updateLoadingState();
       try {
         const response = await fetch(
-          `https://api.hiro.so/extended/v1/address/${address}/transactions?limit=10`
+          `https://api.hiro.so/extended/v1/address/${address}/transactions?limit=50`
         );
         
         if (response.ok) {
@@ -87,11 +119,18 @@ export const useTransactionHistory = () => {
         console.error('Error fetching Stacks transactions:', error);
         setStacksTransactions([]);
       } finally {
-        setIsLoading(false);
+        loadingRef.current.stacks = false;
+        updateLoadingState();
       }
     };
 
     fetchStacksTransactions();
+
+    return () => {
+      if (txFetchTimeoutRef.current) {
+        clearTimeout(txFetchTimeoutRef.current);
+      }
+    };
   }, [stacksConnected, userData]);
 
   const allTransactions = [

@@ -6,15 +6,6 @@ import { EscrowManagement } from './EscrowManagement';
 import { PriceHistory } from './PriceHistory';
 import { formatAddress, formatSTX } from '../utils/validation';
 
-// ... (keep the rest of the imports and state)
-
-<div style={{ marginTop: '20px', padding: '15px', border: '1px solid #eee', borderRadius: '4px' }}>
-  <PriceHistory listingId={listingId} />
-</div>
-    </div >
-  );
-};
-
 interface ListingDetailsProps {
   listingId: number;
   onClose?: () => void;

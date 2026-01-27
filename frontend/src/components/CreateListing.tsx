@@ -118,6 +118,7 @@ export const CreateListing = () => {
           required
           placeholder="0.00"
         />
+        <div className="fee-info">Note: marketplace fee of 2.5% applies to successful sales.</div>
         <div className="form-help">Enter the price in STX (e.g., 1.5 for 1.5 STX)</div>
       </div>
 
@@ -151,6 +152,9 @@ export const CreateListing = () => {
           placeholder="SP..."
           style={{ fontFamily: 'monospace' }}
         />
+<div className="form-group"><label className="checkbox-container"><input type="checkbox" /> Sell via Auction</label></div>
+<div className="form-group"><label>Reserve Price (STX)</label><input type="number" placeholder="10.0" /></div>
+<div className="form-group"><label>Duration (blocks)</label><input type="number" placeholder="144" /></div>
         <div className="form-help">Stacks address that will receive royalty payments</div>
       </div>
 

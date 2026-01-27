@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useStacks } from '../hooks/useStacks';
 import { useContract } from '../hooks/useContract';
 import { ListingCard } from './ListingCard';
@@ -7,6 +7,8 @@ import { WalletBalanceDisplay } from './WalletBalanceDisplay';
 import { NetworkSwitcher } from './NetworkSwitcher';
 import { TransactionHistory } from './TransactionHistory';
 import { useAllWallets } from '../hooks/useAllWallets';
+import { Wishlist } from './Wishlist';
+import { formatSTX } from '../utils/validation';
 
 export const Dashboard = () => {
     const { userSession } = useStacks();
@@ -57,7 +59,20 @@ export const Dashboard = () => {
         }
     };
 
+    const hasLoadedRef = useRef(false);
+    const lastPrincipalRef = useRef<string | null>(null);
+
     useEffect(() => {
+        const principal = getPrincipal();
+        // Only load if principal changed or hasn't loaded yet
+        if (principal && principal !== lastPrincipalRef.current) {
+            lastPrincipalRef.current = principal;
+            hasLoadedRef.current = false;
+        }
+        
+        if (!principal || hasLoadedRef.current) return;
+        
+        hasLoadedRef.current = true;
         loadData();
     }, [userSession]);
 
@@ -129,16 +144,16 @@ export const Dashboard = () => {
                                     </div>
                                 </div>
                             </div>
-
-            {/* Wishlist Section */}
-                        <div style={{ marginBottom: '2rem' }}>
-                            <Wishlist />
-                        </div>
                         ) : (
-                        <div className="skeleton-text" />
+                            <div className="skeleton-text" />
                         )}
                     </div>
                 </div>
+            </div>
+
+            {/* Wishlist Section */}
+            <div style={{ marginBottom: '2rem' }}>
+                <Wishlist />
             </div>
 
             {/* Active Listings */}
@@ -171,11 +186,15 @@ export const Dashboard = () => {
             {/* Transaction History - Multi-Chain */}
             <section>
                 <h2>Recent Activity</h2>
-                {isAnyConnected && (
-                    <div style={{ marginBottom: '1.5rem' }}>
+                <div style={{ marginBottom: '1.5rem' }}>
+                    {isAnyConnected ? (
                         <TransactionHistory />
-                    </div>
-                )}
+                    ) : (
+                        <div className="info-box">
+                            Connect a wallet to view transaction history
+                        </div>
+                    )}
+                </div>
                 {isLoading ? (
                     <LoadingSkeleton count={1} />
                 ) : history.length > 0 ? (

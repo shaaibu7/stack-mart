@@ -1,7 +1,8 @@
+import { ReputationBadge } from "./ReputationBadge";
 import { formatAddress, formatSTX } from '../utils/validation';
 import { useContract } from '../hooks/useContract';
 import { useStacks } from '../hooks/useStacks';
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 
 interface Listing {
   id: number;
@@ -35,12 +36,9 @@ export const ListingCard = ({ listing, onBuy, onViewDetails }: ListingCardProps)
     <div className="card" style={{ maxWidth: '100%' }}>
       <div className="card-header">
         <h3 className="card-title">Listing #{listing.id}</h3>
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <WishlistToggle listingId={listing.id} />
-          {hasNFT && (
-            <span className="badge badge-info">NFT</span>
-          )}
-        </div>
+        {hasNFT && (
+          <span className="badge badge-info">NFT</span>
+        )}
       </div>
 
       <div className="card-body">

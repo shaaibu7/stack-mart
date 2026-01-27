@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useStacks } from '../hooks/useStacks';
 import { useContract } from '../hooks/useContract';
 import { makeContractCall, broadcastTransaction, AnchorMode, PostConditionMode, uintCV, principalCV, listCV } from '@stacks/transactions';
@@ -16,10 +16,15 @@ export const CuratedPack = () => {
   const [selectedListings, setSelectedListings] = useState<number[]>([]);
   const [packPrice, setPackPrice] = useState('');
 
+  const hasLoadedRef = useRef(false);
+  
   useEffect(() => {
-    if (isConnected) {
+    if (isConnected && !hasLoadedRef.current) {
+      hasLoadedRef.current = true;
       loadListings();
       loadPacks();
+    } else if (!isConnected) {
+      hasLoadedRef.current = false;
     }
   }, [isConnected]);
 

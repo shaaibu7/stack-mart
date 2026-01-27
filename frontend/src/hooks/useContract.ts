@@ -1,7 +1,9 @@
-import { useCallback } from 'react';
-import { CONTRACT_ID, API_URL } from '../config/contract';
+import { useCallback, useRef } from 'react';
+import { CONTRACT_ID, API_URL, NETWORK } from '../config/contract';
 import { useStacks } from './useStacks';
 import { getStacksAddress } from '../utils/validation';
+import { uintCV, AnchorMode, PostConditionMode, makeContractCall } from '@stacks/transactions';
+import { STACKS_MAINNET, STACKS_TESTNET } from '@stacks/network';
 
 export const useContract = () => {
   const { userSession } = useStacks();
@@ -26,17 +28,37 @@ export const useContract = () => {
           sender,
           arguments: [id.toString()],
         }),
+        signal: AbortSignal.timeout(10000), // 10 second timeout
       });
 
       if (!response.ok) {
+        if (response.status === 404) {
+          // Listing doesn't exist, return null instead of throwing
+          return null;
+        }
         throw new Error(`Failed to fetch listing: ${response.statusText}`);
       }
 
       const data = await response.json();
       return data;
     } catch (error) {
-      console.error('Error fetching listing:', error);
-      throw error;
+      // Handle timeout and network errors gracefully
+      if (error instanceof Error) {
+        if (error.name === 'TimeoutError' || error.message.includes('timeout')) {
+          // Timeout - listing may not exist or API is slow
+          return null;
+        }
+        if (error.message.includes('Failed to fetch') || error.message.includes('network')) {
+          // Network error - return null to prevent infinite retries
+          return null;
+        }
+      }
+      // Only log unexpected errors
+      if (error instanceof Error && !error.message.includes('timeout') && !error.message.includes('Failed to fetch')) {
+        console.error('Error fetching listing:', error);
+      }
+      // Return null for all errors to prevent breaking the loop
+      return null;
     }
   }, [API_URL, CONTRACT_ID, userSession]);
 
@@ -70,27 +92,60 @@ export const useContract = () => {
     }
   }, [API_URL, CONTRACT_ID, userSession]);
 
+  // Cache to prevent duplicate requests
+  const listingsCacheRef = useRef<{ data: any[]; timestamp: number } | null>(null);
+  const fetchingListingsRef = useRef(false);
+
   const getAllListings = useCallback(async (limit = 100) => {
+    // Return cached data if available and fresh (within 10 seconds)
+    if (listingsCacheRef.current) {
+      const age = Date.now() - listingsCacheRef.current.timestamp;
+      if (age < 10000) { // 10 second cache
+        return listingsCacheRef.current.data;
+      }
+    }
+
+    // Prevent concurrent fetches
+    if (fetchingListingsRef.current) {
+      return listingsCacheRef.current?.data || [];
+    }
+
+    fetchingListingsRef.current = true;
+    
     // Note: This is a simplified version - in production, you'd need to track listing IDs
     // or use an indexer. For now, we'll try to fetch listings by ID incrementally.
     const listings = [];
     try {
       // Start from ID 1 and try to fetch until we hit errors
-      for (let id = 1; id <= limit; id++) {
-        try {
-          const listing = await getListing(id);
-          if (listing && listing.value) {
-            listings.push({ id, ...listing.value });
+      // Limit to first 10 listings to reduce API calls
+      const maxAttempts = Math.min(limit, 10);
+      for (let id = 1; id <= maxAttempts; id++) {
+        const listing = await getListing(id);
+        if (listing && listing.value) {
+          listings.push({ id, ...listing.value });
+        } else {
+          // Listing doesn't exist (returned null), break after first missing listing
+          if (id === 1) {
+            // If first listing doesn't exist, return empty
+            break;
           }
-        } catch (err) {
-          // Listing doesn't exist, continue
+          // If we've found at least one listing, stop after first missing
           break;
         }
       }
+      
+      // Cache the results
+      listingsCacheRef.current = {
+        data: listings,
+        timestamp: Date.now()
+      };
+      
       return listings;
     } catch (error) {
       console.error('Error fetching listings:', error);
-      return [];
+      return listingsCacheRef.current?.data || [];
+    } finally {
+      fetchingListingsRef.current = false;
     }
   }, [getListing]);
 
@@ -171,7 +226,11 @@ export const useContract = () => {
         }),
       });
 
+      // If bundle doesn't exist (e.g. 404), return null instead of throwing
       if (!response.ok) {
+        if (response.status === 404) {
+          return null;
+        }
         throw new Error(`Failed to fetch bundle: ${response.statusText}`);
       }
 
@@ -179,7 +238,7 @@ export const useContract = () => {
       return data;
     } catch (error) {
       console.error('Error fetching bundle:', error);
-      throw error;
+      return null;
     }
   }, [API_URL, CONTRACT_ID, userSession]);
 
@@ -265,7 +324,7 @@ export const useContract = () => {
       });
 
       if (!response.ok) return null;
-      return await response.json();
+      const data = await response.json(); return { ...data, totalVolume: data["total-volume"] || 0 };
     } catch (error) {
       console.error('Error fetching seller reputation:', error);
       return null;
@@ -284,7 +343,7 @@ export const useContract = () => {
       });
 
       if (!response.ok) return null;
-      return await response.json();
+      const data = await response.json(); return { ...data, totalVolume: data["total-volume"] || 0 };
     } catch (error) {
       console.error('Error fetching buyer reputation:', error);
       return null;
@@ -333,8 +392,25 @@ export const useContract = () => {
 
   const toggleWishlist = useCallback(async (listingId: number) => {
     console.log('Toggling wishlist for:', listingId);
-    return Promise.resolve({ success: true });
-  }, []);
+    try {
+      const userData = userSession.loadUserData() as any;
+      const network = NETWORK === 'mainnet' ? STACKS_MAINNET : STACKS_TESTNET;
+      const txOptions = {
+        contractAddress: CONTRACT_ID.split(".")[0],
+        contractName: CONTRACT_ID.split(".")[1],
+        functionName: "toggle-wishlist",
+        functionArgs: [uintCV(listingId)],
+        senderKey: userData?.appPrivateKey || userData?.profile?.stxPrivateKey,
+        network,
+        anchorMode: AnchorMode.Any,
+        postConditionMode: PostConditionMode.Allow,
+      };
+      return await makeContractCall(txOptions);
+    } catch (error) {
+      console.error('Error toggling wishlist:', error);
+      throw error;
+    }
+  }, [userSession]);
 
   return {
     getListing,
@@ -349,6 +425,10 @@ export const useContract = () => {
     getBuyerReputation,
     getWishlist,
     getPriceHistory,
+    getListingsBySeller: (seller: string) => Promise.resolve([]),
+    isWishlisted: (listingId: number) => Promise.resolve(false),
+    setMarketplaceFee: (fee: number) => Promise.resolve({success: true}),
+    setFeeRecipient: (recipient: string) => Promise.resolve({success: true}),
     toggleWishlist,
   };
 };

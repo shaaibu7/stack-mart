@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useStacks } from '../hooks/useStacks';
 import { useContract } from '../hooks/useContract';
 import { makeContractCall, broadcastTransaction, AnchorMode, PostConditionMode, uintCV, listCV } from '@stacks/transactions';
@@ -18,10 +18,15 @@ export const BundleManagement = () => {
   const [selectedListings, setSelectedListings] = useState<number[]>([]);
   const [discountBips, setDiscountBips] = useState('');
 
+  const hasLoadedRef = useRef(false);
+  
   useEffect(() => {
-    if (isConnected) {
+    if (isConnected && !hasLoadedRef.current) {
+      hasLoadedRef.current = true;
       loadListings();
       loadBundles();
+    } else if (!isConnected) {
+      hasLoadedRef.current = false;
     }
   }, [isConnected]);
 
@@ -40,14 +45,16 @@ export const BundleManagement = () => {
   const loadBundles = async () => {
     // Try to load bundles (in production, you'd track bundle IDs)
     const bundleList = [];
-    for (let id = 1; id <= 50; id++) {
-      try {
-        const bundleData = await getBundle(id);
-        if (bundleData?.value) {
-          bundleList.push({ id, ...bundleData.value });
-        }
-      } catch (err) {
-        // Bundle doesn't exist
+    // Limit the number of attempts to avoid excessive 404s
+    const maxAttempts = 10;
+    for (let id = 1; id <= maxAttempts; id++) {
+      const bundleData = await getBundle(id);
+      if (bundleData?.value) {
+        bundleList.push({ id, ...bundleData.value });
+      } else {
+        // If we didn't get a bundle for this id, stop trying further ids
+        // to avoid spamming the API with non-existent IDs
+        if (id > 1) break;
       }
     }
     setBundles(bundleList);

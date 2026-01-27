@@ -14,9 +14,11 @@ export const useChainhooks = () => {
   const [events, setEvents] = useState<ChainhookEvent[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [disabled, setDisabled] = useState(false);
 
   // Fetch recent events
   const fetchEvents = useCallback(async (limit = 50, contract?: string, functionName?: string) => {
+    if (disabled) return;
     setIsLoading(true);
     setError(null);
     
@@ -36,12 +38,21 @@ export const useChainhooks = () => {
       setEvents(data.events || []);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      // If the request is being blocked by a browser extension or network error,
+      // disable further polling to avoid spamming the console.
+      if (errorMessage.toLowerCase().includes('failed to fetch') || errorMessage.toLowerCase().includes('network')) {
+        setDisabled(true);
+      }
       setError(errorMessage);
-      console.error('Error fetching chainhook events:', err);
+      // Only log non-network errors to avoid noisy console output
+      if (!errorMessage.toLowerCase().includes('failed to fetch')) {
+        // eslint-disable-next-line no-console
+        console.error('Error fetching chainhook events:', err);
+      }
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [disabled]);
 
   // Fetch events for a specific transaction
   const fetchEventByTxid = useCallback(async (txid: string) => {
@@ -76,11 +87,14 @@ export const useChainhooks = () => {
     
     // Poll every 10 seconds for new events
     const interval = setInterval(() => {
-      fetchEvents();
+      // Don't keep polling if we've permanently disabled chainhooks
+      if (!disabled) {
+        fetchEvents();
+      }
     }, 10000);
     
     return () => clearInterval(interval);
-  }, [fetchEvents]);
+  }, [fetchEvents, disabled]);
 
   // Filter events by function name
   const getEventsByFunction = useCallback((functionName: string) => {

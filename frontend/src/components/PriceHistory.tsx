@@ -9,8 +9,8 @@ export const PriceHistory = ({ listingId }: { listingId: number }) => {
     useEffect(() => {
         const loadPriceHistory = async () => {
             try {
-                const data = await getPriceHistory(listingId);
-                const rawHistory = data.history?.value || data.history || [];
+                const data: any = await getPriceHistory(listingId);
+                const rawHistory = data?.history?.value || data?.history || [];
                 setHistory(rawHistory);
             } catch (error) {
                 console.error('Error loading price history:', error);
