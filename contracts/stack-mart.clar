@@ -327,10 +327,63 @@
   { user: principal }
   { listing-ids: (list 100 uint) })
 
-;; Price history tracking
+;; Price history tracking - enhanced
+(define-map price-history-v2
+  { listing-id: uint }
+  { prices: (list 50 { price: uint, timestamp: uint, event-type: (string-ascii 20) })
+  , average-price: uint
+  , min-price: uint
+  , max-price: uint
+  , price-changes: uint
+  })
+
+;; Legacy price history (kept for backward compatibility)
 (define-map price-history
   { listing-id: uint }
   { history: (list 10 { price: uint, block-height: uint }) })
+
+;; Enhanced listing structure with search and filtering capabilities
+(define-map listings-v2
+  { id: uint }
+  { seller: principal
+  , price: uint
+  , royalty-bips: uint
+  , royalty-recipient: principal
+  , nft-contract: (optional principal)
+  , token-id: (optional uint)
+  , license-terms: (optional (string-ascii 500))
+  , category: (string-ascii 50)
+  , tags: (list 5 (string-ascii 20))
+  , created-at: uint
+  , updated-at: uint
+  , view-count: uint
+  , featured: bool
+  })
+
+;; Category index for efficient filtering
+(define-map category-listings
+  { category: (string-ascii 50) }
+  { listing-ids: (list 100 uint) })
+
+;; Price range index for efficient filtering (using price buckets)
+(define-map price-bucket-listings
+  { bucket: uint } ;; 0=0-1000, 1=1001-10000, 2=10001-100000, etc.
+  { listing-ids: (list 100 uint) })
+
+;; Active listings by seller for reputation-based filtering
+(define-map seller-active-listings
+  { seller: principal }
+  { listing-ids: (list 50 uint) })
+
+;; Valid categories for validation
+(define-constant VALID_CATEGORIES (list "art" "music" "gaming" "collectibles" "utility" "domain" "photography" "sports" "fashion" "other"))
+
+;; Price bucket constants for efficient range filtering
+(define-constant PRICE_BUCKET_0 u1000)      ;; 0-1000 microSTX
+(define-constant PRICE_BUCKET_1 u10000)     ;; 1001-10000 microSTX  
+(define-constant PRICE_BUCKET_2 u100000)    ;; 10001-100000 microSTX
+(define-constant PRICE_BUCKET_3 u1000000)   ;; 100001-1000000 microSTX
+(define-constant PRICE_BUCKET_4 u10000000)  ;; 1000001-10000000 microSTX
 
 (define-public (update-listing-price (id uint) (new-price uint))
   (let (
@@ -433,7 +486,7 @@
   (let ((total-txs (+ successful-txs failed-txs))
         (success-rate (if (> total-txs u0) (/ (* successful-txs u100) total-txs) u0))
         (avg-rating (if (> rating-count u0) (/ rating-sum rating-count) u0))
-        (volume-weight (min (/ total-volume u1000) u100))) ;; Cap volume weight at 100
+        (volume-weight (if (< (/ total-volume u1000) u100) (/ total-volume u1000) u100))) ;; Cap volume weight at 100
     (+ (* success-rate u40) (* avg-rating u40) (* volume-weight u20))))
 
 (define-private (update-reputation-v2 (principal principal) (success bool) (amount uint) (rating (optional uint)))
@@ -1244,3 +1297,244 @@
 (define-private (process-pack-purchases (listing-ids (list 20 uint)) (buyer principal))
   ;; Note: Simplified - in full implementation would process each listing
   true)
+
+;; ========================================
+;; SEARCH AND FILTERING FUNCTIONS
+;; ========================================
+
+;; Helper function to validate category
+(define-private (is-valid-category (category (string-ascii 50)))
+  (is-some (index-of VALID_CATEGORIES category)))
+
+;; Helper function to get price bucket for a given price
+(define-private (get-price-bucket (price uint))
+  (if (<= price PRICE_BUCKET_0)
+    u0
+    (if (<= price PRICE_BUCKET_1)
+      u1
+      (if (<= price PRICE_BUCKET_2)
+        u2
+        (if (<= price PRICE_BUCKET_3)
+          u3
+          (if (<= price PRICE_BUCKET_4)
+            u4
+            u5)))))) ;; 5+ for prices above 10M microSTX
+
+;; Helper function to add listing to category index
+(define-private (add-to-category-index (listing-id uint) (category (string-ascii 50)))
+  (let ((current-listings (default-to (list) (get listing-ids (map-get? category-listings { category: category })))))
+    (match (as-max-len? (append current-listings listing-id) u100)
+      updated-list
+        (begin
+          (map-set category-listings { category: category } { listing-ids: updated-list })
+          true)
+      false))) ;; List full, ignore for now
+
+;; Helper function to add listing to price bucket index
+(define-private (add-to-price-bucket-index (listing-id uint) (price uint))
+  (let ((bucket (get-price-bucket price))
+        (current-listings (default-to (list) (get listing-ids (map-get? price-bucket-listings { bucket: bucket })))))
+    (match (as-max-len? (append current-listings listing-id) u100)
+      updated-list
+        (begin
+          (map-set price-bucket-listings { bucket: bucket } { listing-ids: updated-list })
+          true)
+      false))) ;; List full, ignore for now
+
+;; Helper function to add listing to seller index
+(define-private (add-to-seller-index (listing-id uint) (seller principal))
+  (let ((current-listings (default-to (list) (get listing-ids (map-get? seller-active-listings { seller: seller })))))
+    (match (as-max-len? (append current-listings listing-id) u50)
+      updated-list
+        (begin
+          (map-set seller-active-listings { seller: seller } { listing-ids: updated-list })
+          true)
+      false))) ;; List full, ignore for now
+
+;; Enhanced listing creation with search indexing
+(define-public (create-listing-v2 
+    (price uint) 
+    (royalty-bips uint) 
+    (royalty-recipient principal)
+    (category (string-ascii 50))
+    (tags (list 5 (string-ascii 20))))
+  (begin
+    ;; Security checks
+    (try! (check-reentrancy))
+    (try! (check-rate-limit tx-sender))
+    ;; Enhanced input validation
+    (asserts! (validate-price price) ERR_INVALID_INPUT)
+    (asserts! (validate-royalty royalty-bips) ERR_BAD_ROYALTY)
+    (asserts! (is-valid-category category) ERR_INVALID_CATEGORY)
+    (let ((id (var-get next-id)))
+      (begin
+        ;; Create enhanced listing
+        (map-set listings-v2
+          { id: id }
+          { seller: tx-sender
+          , price: price
+          , royalty-bips: royalty-bips
+          , royalty-recipient: royalty-recipient
+          , nft-contract: none
+          , token-id: none
+          , license-terms: none
+          , category: category
+          , tags: tags
+          , created-at: burn-block-height
+          , updated-at: burn-block-height
+          , view-count: u0
+          , featured: false })
+        ;; Add to search indices
+        (add-to-category-index id category)
+        (add-to-price-bucket-index id price)
+        (add-to-seller-index id tx-sender)
+        (var-set next-id (+ id u1))
+        ;; Log listing creation event
+        (log-event "listing-v2-created" tx-sender (some id) (some price) (some category))
+        (clear-reentrancy)
+        (ok id)))))
+
+;; Enhanced NFT listing creation with search indexing
+(define-public (create-listing-v2-with-nft
+    (nft-contract principal)
+    (token-id uint)
+    (price uint)
+    (royalty-bips uint)
+    (royalty-recipient principal)
+    (license-terms (string-ascii 500))
+    (category (string-ascii 50))
+    (tags (list 5 (string-ascii 20))))
+  (begin
+    ;; Security checks
+    (try! (check-reentrancy))
+    (try! (check-rate-limit tx-sender))
+    ;; Enhanced input validation
+    (asserts! (validate-price price) ERR_INVALID_INPUT)
+    (asserts! (validate-royalty royalty-bips) ERR_BAD_ROYALTY)
+    (asserts! (validate-string-length license-terms u500) ERR_INVALID_INPUT)
+    (asserts! (is-valid-category category) ERR_INVALID_CATEGORY)
+    ;; Verify seller owns the NFT
+    (asserts! (verify-nft-ownership nft-contract token-id tx-sender) ERR_NOT_OWNER)
+    (let ((id (var-get next-id)))
+      (begin
+        ;; Create enhanced NFT listing
+        (map-set listings-v2
+          { id: id }
+          { seller: tx-sender
+          , price: price
+          , royalty-bips: royalty-bips
+          , royalty-recipient: royalty-recipient
+          , nft-contract: (some nft-contract)
+          , token-id: (some token-id)
+          , license-terms: (some license-terms)
+          , category: category
+          , tags: tags
+          , created-at: burn-block-height
+          , updated-at: burn-block-height
+          , view-count: u0
+          , featured: false })
+        ;; Add to search indices
+        (add-to-category-index id category)
+        (add-to-price-bucket-index id price)
+        (add-to-seller-index id tx-sender)
+        (var-set next-id (+ id u1))
+        ;; Log NFT listing creation event
+        (log-event "nft-listing-v2-created" tx-sender (some id) (some price) (some category))
+        (clear-reentrancy)
+        (ok id)))))
+
+;; Search listings by category
+(define-read-only (search-by-category (category (string-ascii 50)))
+  (match (map-get? category-listings { category: category })
+    category-data (ok (get listing-ids category-data))
+    (ok (list))))
+
+;; Filter listings by price range
+(define-read-only (filter-by-price-range (min-price uint) (max-price uint))
+  (let ((min-bucket (get-price-bucket min-price))
+        (max-bucket (get-price-bucket max-price)))
+    ;; For simplicity, return listings from the min-price bucket
+    ;; In full implementation, would check multiple buckets and filter precisely
+    (match (map-get? price-bucket-listings { bucket: min-bucket })
+      bucket-data (ok (get listing-ids bucket-data))
+      (ok (list)))))
+
+;; Filter listings by seller reputation (minimum weighted score)
+(define-read-only (filter-by-seller-reputation (min-reputation-score uint))
+  (let ((high-rep-sellers (get-high-reputation-sellers min-reputation-score)))
+    ;; Return listings from high reputation sellers
+    ;; For simplicity, return first high-rep seller's listings
+    ;; In full implementation, would aggregate from all qualifying sellers
+    (if (> (len high-rep-sellers) u0)
+      (match (element-at high-rep-sellers u0)
+        (some seller)
+          (match (map-get? seller-active-listings { seller: seller })
+            seller-data (ok (get listing-ids seller-data))
+            (ok (list)))
+        (ok (list)))
+      (ok (list)))))
+
+;; Helper function to get sellers with high reputation
+(define-private (get-high-reputation-sellers (min-score uint))
+  ;; Simplified implementation - returns empty list for now
+  ;; In full implementation, would iterate through reputation-v2 map
+  (list))
+
+;; Combined search function with multiple filters
+(define-read-only (search-listings 
+    (category (optional (string-ascii 50)))
+    (min-price (optional uint))
+    (max-price (optional uint))
+    (min-reputation (optional uint)))
+  (let ((category-results (match category
+          (some cat) (unwrap-panic (search-by-category cat))
+          (list))) ;; Return empty list if no category filter
+        (price-results (match min-price
+          (some min-p) 
+            (match max-price
+              (some max-p) (unwrap-panic (filter-by-price-range min-p max-p))
+              (unwrap-panic (filter-by-price-range min-p u1000000000000))) ;; Use max possible price
+          (list))) ;; Return empty list if no price filter
+        (reputation-results (match min-reputation
+          (some min-rep) (unwrap-panic (filter-by-seller-reputation min-rep))
+          (list)))) ;; Return empty list if no reputation filter
+    ;; For simplicity, return category results if available, otherwise price results
+    ;; In full implementation, would intersect all result sets
+    (if (> (len category-results) u0)
+      (ok category-results)
+      (if (> (len price-results) u0)
+        (ok price-results)
+        (ok reputation-results)))))
+
+;; Get enhanced listing details
+(define-read-only (get-listing-v2 (id uint))
+  (match (map-get? listings-v2 { id: id })
+    listing (ok listing)
+    ERR_NOT_FOUND))
+
+;; Get all valid categories
+(define-read-only (get-valid-categories)
+  (ok VALID_CATEGORIES))
+
+;; Get listings count by category
+(define-read-only (get-category-count (category (string-ascii 50)))
+  (match (map-get? category-listings { category: category })
+    category-data (ok (len (get listing-ids category-data)))
+    (ok u0)))
+
+;; Get featured listings (listings marked as featured)
+(define-read-only (get-featured-listings)
+  ;; Simplified implementation - would need to maintain featured index
+  ;; For now, return empty list
+  (ok (list)))
+
+;; Update listing view count (for analytics)
+(define-public (increment-view-count (listing-id uint))
+  (match (map-get? listings-v2 { id: listing-id })
+    listing
+      (begin
+        (map-set listings-v2
+          { id: listing-id }
+          (merge listing { view-count: (+ (get view-count listing) u1) }))
+        (ok true))
+    ERR_NOT_FOUND))
