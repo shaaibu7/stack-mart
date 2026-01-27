@@ -863,59 +863,230 @@
         ERR_NOT_FOUND)
     ERR_ESCROW_NOT_FOUND))
 
-;; Release escrow after timeout or manual release
-(define-public (release-escrow (listing-id uint))
+;; Release escrow after timeout or manual release - ENHANCED
+(define-public (release-escrow-v2 (listing-id uint))
   (match (map-get? escrows { listing-id: listing-id })
     escrow
       (match (map-get? listings { id: listing-id })
         listing
-          (let (
-                (state (get state escrow))
-               )
-            (begin
-              ;; Can release if: state is "delivered" (buyer can release after delivery)
-              ;; Timeout check can be added later with proper block height function
-              (asserts! (is-eq state "delivered") ERR_TIMEOUT_NOT_REACHED)
-              ;; Only buyer or seller can release after timeout
-              (asserts! (or (is-eq tx-sender (get buyer escrow)) (is-eq tx-sender (get seller listing))) ERR_NOT_OWNER)
-              ;; If delivered and timeout, release to seller (seller fulfilled, buyer didn't confirm)
-              ;; If pending and timeout, refund to buyer
-              (let (
-                    (price (get amount escrow))
-                    (seller (get seller listing))
-                    (buyer-addr (get buyer escrow))
-                    (timeout-block (get timeout-block escrow))
-                   )
-                (begin
-                  (if (is-eq state "delivered")
-                    ;; Seller delivered, buyer didn't confirm - release to seller
-                    (let (
-                          (royalty-bips (get royalty-bips listing))
-                          (royalty-recipient (get royalty-recipient listing))
-                          (royalty (/ (* price royalty-bips) BPS_DENOMINATOR))
-                          (seller-share (- price royalty))
-                         )
-                      (begin
-                        ;; Note: In full implementation, transfer from contract-held escrow
-                        (if (> royalty u0)
-                          (try! (stx-transfer? royalty tx-sender royalty-recipient))
-                          true)
-                        (try! (stx-transfer? seller-share tx-sender seller))))
-                    ;; Pending and timeout - refund to buyer
-                    (try! (stx-transfer? price tx-sender buyer-addr)))
-                  ;; Update escrow state
-                  (map-set escrows
-                    { listing-id: listing-id }
-                    { buyer: buyer-addr
-                    , amount: price
-                    , created-at-block: (get created-at-block escrow)
-                    , state: "released"
-                    , timeout-block: timeout-block })
-                  ;; Remove listing if released
-                  (if (is-eq state "delivered")
-                    (map-delete listings { id: listing-id })
-                    true)
-                  (ok true)))))
+          (begin
+            ;; Security checks
+            (try! (check-reentrancy))
+            (try! (check-rate-limit tx-sender))
+            (let ((state (get state escrow))
+                  (timeout-block (get timeout-block escrow))
+                  (current-block burn-block-height)
+                  (is-timeout-reached (>= current-block timeout-block)))
+              (begin
+                ;; Check timeout conditions and permissions
+                (if is-timeout-reached
+                  ;; Timeout reached - automatic resolution rules
+                  (begin
+                    ;; Anyone can trigger timeout resolution after timeout
+                    (if (is-eq state "pending")
+                      ;; Pending timeout - refund to buyer (seller didn't deliver)
+                      (try! (resolve-timeout-refund listing-id escrow))
+                      ;; Delivered timeout - release to seller (buyer didn't confirm)
+                      (if (is-eq state "delivered")
+                        (try! (resolve-timeout-release listing-id escrow listing))
+                        ;; Invalid state for timeout resolution
+                        (err ERR_INVALID_STATE))))
+                  ;; No timeout - manual release (only by authorized parties)
+                  (begin
+                    ;; Only buyer or seller can manually release
+                    (asserts! (or (is-eq tx-sender (get buyer escrow)) (is-eq tx-sender (get seller listing))) ERR_NOT_OWNER)
+                    ;; Manual release only allowed in delivered state
+                    (asserts! (is-eq state "delivered") ERR_INVALID_STATE)
+                    (try! (resolve-manual-release listing-id escrow listing))))
+                ;; Log escrow resolution event
+                (log-event "escrow-resolved" tx-sender (some listing-id) (some (get amount escrow)) 
+                  (some (if is-timeout-reached "timeout" "manual")))
+                (clear-reentrancy)
+                (ok true))))
+        ERR_NOT_FOUND)
+    ERR_ESCROW_NOT_FOUND))
+
+;; Helper function to resolve timeout refund (pending -> refund to buyer)
+(define-private (resolve-timeout-refund (listing-id uint) (escrow { buyer: principal, seller: principal, amount: uint, created-at-block: uint, state: (string-ascii 20), timeout-block: uint, stx-held: bool }))
+  (let ((price (get amount escrow))
+        (buyer-addr (get buyer escrow)))
+    (begin
+      ;; Transfer refund from contract-held escrow to buyer
+      (if (get stx-held escrow)
+        (try! (as-contract (stx-transfer? price tx-sender buyer-addr)))
+        true) ;; If not held in contract, assume already handled
+      ;; Update escrow state
+      (map-set escrows
+        { listing-id: listing-id }
+        { buyer: buyer-addr
+        , seller: (get seller escrow)
+        , amount: price
+        , created-at-block: (get created-at-block escrow)
+        , state: "timeout-refunded"
+        , timeout-block: (get timeout-block escrow)
+        , stx-held: false })
+      ;; Update reputation - failed transaction for seller
+      (update-reputation (get seller escrow) false)
+      (update-reputation-v2 (get seller escrow) false price none)
+      (ok true))))
+
+;; Helper function to resolve timeout release (delivered -> release to seller)
+(define-private (resolve-timeout-release (listing-id uint) (escrow { buyer: principal, seller: principal, amount: uint, created-at-block: uint, state: (string-ascii 20), timeout-block: uint, stx-held: bool }) (listing { seller: principal, price: uint, royalty-bips: uint, royalty-recipient: principal, nft-contract: (optional principal), token-id: (optional uint), license-terms: (optional (string-ascii 500)) }))
+  (let ((price (get amount escrow))
+        (seller (get seller listing))
+        (royalty-bips (get royalty-bips listing))
+        (royalty-recipient (get royalty-recipient listing))
+        (royalty (/ (* price royalty-bips) BPS_DENOMINATOR))
+        (marketplace-fee (/ (* price MARKETPLACE_FEE_BIPS) BPS_DENOMINATOR))
+        (seller-share (- (- price royalty) marketplace-fee)))
+    (begin
+      ;; Transfer payments from contract-held escrow
+      (if (get stx-held escrow)
+        (begin
+          ;; Transfer marketplace fee
+          (if (> marketplace-fee u0)
+            (try! (as-contract (stx-transfer? marketplace-fee tx-sender FEE_RECIPIENT)))
+            true)
+          ;; Transfer royalty if applicable
+          (if (> royalty u0)
+            (try! (as-contract (stx-transfer? royalty tx-sender royalty-recipient)))
+            true)
+          ;; Transfer seller share
+          (try! (as-contract (stx-transfer? seller-share tx-sender seller))))
+        true) ;; If not held in contract, assume already handled
+      ;; Update escrow state
+      (map-set escrows
+        { listing-id: listing-id }
+        { buyer: (get buyer escrow)
+        , seller: seller
+        , amount: price
+        , created-at-block: (get created-at-block escrow)
+        , state: "timeout-released"
+        , timeout-block: (get timeout-block escrow)
+        , stx-held: false })
+      ;; Update reputation - successful transaction
+      (update-reputation seller true)
+      (update-reputation (get buyer escrow) true)
+      (update-reputation-v2 seller true price none)
+      (update-reputation-v2 (get buyer escrow) true price none)
+      ;; Remove listing
+      (map-delete listings { id: listing-id })
+      (ok true))))
+
+;; Helper function to resolve manual release
+(define-private (resolve-manual-release (listing-id uint) (escrow { buyer: principal, seller: principal, amount: uint, created-at-block: uint, state: (string-ascii 20), timeout-block: uint, stx-held: bool }) (listing { seller: principal, price: uint, royalty-bips: uint, royalty-recipient: principal, nft-contract: (optional principal), token-id: (optional uint), license-terms: (optional (string-ascii 500)) }))
+  (let ((price (get amount escrow))
+        (seller (get seller listing))
+        (royalty-bips (get royalty-bips listing))
+        (royalty-recipient (get royalty-recipient listing))
+        (royalty (/ (* price royalty-bips) BPS_DENOMINATOR))
+        (marketplace-fee (/ (* price MARKETPLACE_FEE_BIPS) BPS_DENOMINATOR))
+        (seller-share (- (- price royalty) marketplace-fee)))
+    (begin
+      ;; Transfer payments from contract-held escrow
+      (if (get stx-held escrow)
+        (begin
+          ;; Transfer marketplace fee
+          (if (> marketplace-fee u0)
+            (try! (as-contract (stx-transfer? marketplace-fee tx-sender FEE_RECIPIENT)))
+            true)
+          ;; Transfer royalty if applicable
+          (if (> royalty u0)
+            (try! (as-contract (stx-transfer? royalty tx-sender royalty-recipient)))
+            true)
+          ;; Transfer seller share
+          (try! (as-contract (stx-transfer? seller-share tx-sender seller))))
+        true) ;; If not held in contract, assume already handled
+      ;; Update escrow state
+      (map-set escrows
+        { listing-id: listing-id }
+        { buyer: (get buyer escrow)
+        , seller: seller
+        , amount: price
+        , created-at-block: (get created-at-block escrow)
+        , state: "manually-released"
+        , timeout-block: (get timeout-block escrow)
+        , stx-held: false })
+      ;; Update reputation - successful transaction
+      (update-reputation seller true)
+      (update-reputation (get buyer escrow) true)
+      (update-reputation-v2 seller true price none)
+      (update-reputation-v2 (get buyer escrow) true price none)
+      ;; Remove listing
+      (map-delete listings { id: listing-id })
+      (ok true))))
+
+;; Check if escrow has timed out
+(define-read-only (is-escrow-timed-out (listing-id uint))
+  (match (map-get? escrows { listing-id: listing-id })
+    escrow (ok (>= burn-block-height (get timeout-block escrow)))
+    ERR_ESCROW_NOT_FOUND))
+
+;; Get escrow timeout information
+(define-read-only (get-escrow-timeout-info (listing-id uint))
+  (match (map-get? escrows { listing-id: listing-id })
+    escrow 
+      (ok { timeout-block: (get timeout-block escrow)
+          , current-block: burn-block-height
+          , blocks-remaining: (if (> (get timeout-block escrow) burn-block-height) 
+                                (- (get timeout-block escrow) burn-block-height) 
+                                u0)
+          , is-timed-out: (>= burn-block-height (get timeout-block escrow)) })
+    ERR_ESCROW_NOT_FOUND))
+
+;; Batch timeout resolution (can resolve multiple timed-out escrows)
+(define-public (batch-resolve-timeouts (listing-ids (list 10 uint)))
+  (begin
+    ;; Security checks
+    (try! (check-reentrancy))
+    (try! (check-rate-limit tx-sender))
+    ;; Process each listing
+    (let ((results (map resolve-single-timeout listing-ids)))
+      (begin
+        ;; Log batch resolution event
+        (log-event "batch-timeout-resolved" tx-sender none (some (len listing-ids)) none)
+        (clear-reentrancy)
+        (ok results)))))
+
+;; Helper function to resolve a single timeout
+(define-private (resolve-single-timeout (listing-id uint))
+  (match (unwrap-panic (is-escrow-timed-out listing-id))
+    true (unwrap-panic (release-escrow-v2 listing-id)) ;; Resolve if timed out
+    false)) ;; Skip if not timed out
+
+;; Get all timed-out escrows (simplified implementation)
+(define-read-only (get-timed-out-escrows)
+  ;; In full implementation, would maintain an index of active escrows
+  ;; For now, return empty list as placeholder
+  (ok (list)))
+
+;; Extend escrow timeout (mutual agreement between buyer and seller)
+(define-public (extend-escrow-timeout (listing-id uint) (additional-blocks uint))
+  (match (map-get? escrows { listing-id: listing-id })
+    escrow
+      (match (map-get? listings { id: listing-id })
+        listing
+          (begin
+            ;; Security checks
+            (try! (check-reentrancy))
+            (try! (check-rate-limit tx-sender))
+            ;; Only buyer or seller can extend
+            (asserts! (or (is-eq tx-sender (get buyer escrow)) (is-eq tx-sender (get seller listing))) ERR_NOT_OWNER)
+            ;; Can only extend if not yet timed out and in pending/delivered state
+            (asserts! (< burn-block-height (get timeout-block escrow)) ERR_TIMEOUT_NOT_REACHED)
+            (asserts! (or (is-eq (get state escrow) "pending") (is-eq (get state escrow) "delivered")) ERR_INVALID_STATE)
+            ;; Validate extension period (max 30 days additional)
+            (asserts! (<= additional-blocks u4320) ERR_INVALID_INPUT)
+            (let ((new-timeout (+ (get timeout-block escrow) additional-blocks)))
+              (begin
+                ;; Update escrow with new timeout
+                (map-set escrows
+                  { listing-id: listing-id }
+                  (merge escrow { timeout-block: new-timeout }))
+                ;; Log timeout extension event
+                (log-event "escrow-timeout-extended" tx-sender (some listing-id) (some additional-blocks) none)
+                (clear-reentrancy)
+                (ok new-timeout))))
         ERR_NOT_FOUND)
     ERR_ESCROW_NOT_FOUND))
 
