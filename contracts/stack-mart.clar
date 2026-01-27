@@ -41,9 +41,35 @@
 (define-constant ERR_BUNDLE_EMPTY (err u400))
 (define-constant ERR_ALREADY_WISHLISTED (err u405))
 
+;; Enhanced error codes for improved validation
+(define-constant ERR_REENTRANCY (err u600))
+(define-constant ERR_RATE_LIMITED (err u601))
+(define-constant ERR_INSUFFICIENT_BALANCE (err u602))
+(define-constant ERR_INVALID_CATEGORY (err u603))
+(define-constant ERR_EXPIRED_LISTING (err u604))
+(define-constant ERR_INVALID_OFFER (err u605))
+(define-constant ERR_BATCH_SIZE_EXCEEDED (err u606))
+(define-constant ERR_MIGRATION_FAILED (err u607))
+(define-constant ERR_INVALID_INPUT (err u608))
+(define-constant ERR_ZERO_AMOUNT (err u609))
+(define-constant ERR_OVERFLOW (err u610))
+
 ;; Marketplace fee constants
 (define-constant MARKETPLACE_FEE_BIPS u250) ;; 2.5% fee
 (define-constant FEE_RECIPIENT tx-sender) ;; Deployer is initial fee recipient
+
+;; Input validation helpers
+(define-private (validate-price (price uint))
+  (and (> price u0) (<= price u1000000000000))) ;; Max 1 trillion microSTX
+
+(define-private (validate-royalty (royalty-bips uint))
+  (<= royalty-bips MAX_ROYALTY_BIPS))
+
+(define-private (validate-discount (discount-bips uint))
+  (<= discount-bips MAX_DISCOUNT_BIPS))
+
+(define-private (validate-string-length (str (string-ascii 500)) (max-len uint))
+  (<= (len str) max-len))
 
 ;; Bundle and pack constants
 (define-constant MAX_BUNDLE_SIZE u10)
@@ -262,7 +288,9 @@
 ;; Legacy function - kept for backward compatibility (no NFT)
 (define-public (create-listing (price uint) (royalty-bips uint) (royalty-recipient principal))
   (begin
-    (asserts! (<= royalty-bips MAX_ROYALTY_BIPS) ERR_BAD_ROYALTY)
+    ;; Enhanced input validation
+    (asserts! (validate-price price) ERR_INVALID_INPUT)
+    (asserts! (validate-royalty royalty-bips) ERR_BAD_ROYALTY)
     (let ((id (var-get next-id)))
       (map-set listings
         { id: id }
@@ -285,7 +313,10 @@
     (royalty-recipient principal)
     (license-terms (string-ascii 500)))
   (begin
-    (asserts! (<= royalty-bips MAX_ROYALTY_BIPS) ERR_BAD_ROYALTY)
+    ;; Enhanced input validation
+    (asserts! (validate-price price) ERR_INVALID_INPUT)
+    (asserts! (validate-royalty royalty-bips) ERR_BAD_ROYALTY)
+    (asserts! (validate-string-length license-terms u500) ERR_INVALID_INPUT)
     ;; Verify seller owns the NFT
     (asserts! (verify-nft-ownership nft-contract token-id tx-sender) ERR_NOT_OWNER)
     (let ((id (var-get next-id)))
