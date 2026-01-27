@@ -228,7 +228,29 @@
   , stx-held: bool
   })
 
-;; Reputation system
+;; Reputation system - enhanced with weighted scoring
+(define-map reputation-v2
+  { principal: principal }
+  { successful-txs: uint
+  , failed-txs: uint
+  , total-volume: uint
+  , rating-sum: uint
+  , rating-count: uint
+  , weighted-score: uint
+  , last-updated: uint
+  , verification-level: uint
+  })
+
+;; Mutual rating system
+(define-map transaction-ratings
+  { listing-id: uint
+  , rater: principal }
+  { rating: uint
+  , comment: (optional (string-ascii 200))
+  , timestamp: uint
+  })
+
+;; Legacy reputation maps (kept for backward compatibility)
 (define-map reputation-seller
   { seller: principal }
   { successful-txs: uint
@@ -393,6 +415,86 @@
 
 (define-read-only (get-buyer-reputation (buyer principal))
   (ok (default-to { successful-txs: u0, failed-txs: u0, rating-sum: u0, rating-count: u0, total-volume: u0 } (map-get? reputation-buyer { buyer: buyer }))))
+
+;; Enhanced reputation system functions
+(define-read-only (get-reputation-v2 (principal principal))
+  (ok (default-to { 
+    successful-txs: u0, 
+    failed-txs: u0, 
+    total-volume: u0, 
+    rating-sum: u0, 
+    rating-count: u0, 
+    weighted-score: u0, 
+    last-updated: u0, 
+    verification-level: u0 
+  } (map-get? reputation-v2 { principal: principal }))))
+
+(define-private (calculate-weighted-score (successful-txs uint) (failed-txs uint) (total-volume uint) (rating-sum uint) (rating-count uint))
+  (let ((total-txs (+ successful-txs failed-txs))
+        (success-rate (if (> total-txs u0) (/ (* successful-txs u100) total-txs) u0))
+        (avg-rating (if (> rating-count u0) (/ rating-sum rating-count) u0))
+        (volume-weight (min (/ total-volume u1000) u100))) ;; Cap volume weight at 100
+    (+ (* success-rate u40) (* avg-rating u40) (* volume-weight u20))))
+
+(define-private (update-reputation-v2 (principal principal) (success bool) (amount uint) (rating (optional uint)))
+  (let ((current-rep (default-to { 
+          successful-txs: u0, 
+          failed-txs: u0, 
+          total-volume: u0, 
+          rating-sum: u0, 
+          rating-count: u0, 
+          weighted-score: u0, 
+          last-updated: u0, 
+          verification-level: u0 
+        } (map-get? reputation-v2 { principal: principal })))
+        (new-successful (if success (+ (get successful-txs current-rep) u1) (get successful-txs current-rep)))
+        (new-failed (if success (get failed-txs current-rep) (+ (get failed-txs current-rep) u1)))
+        (new-volume (+ (get total-volume current-rep) amount))
+        (new-rating-sum (match rating
+          some-rating (+ (get rating-sum current-rep) some-rating)
+          (get rating-sum current-rep)))
+        (new-rating-count (match rating
+          some-rating (+ (get rating-count current-rep) u1)
+          (get rating-count current-rep)))
+        (new-weighted-score (calculate-weighted-score new-successful new-failed new-volume new-rating-sum new-rating-count)))
+    (begin
+      (map-set reputation-v2
+        { principal: principal }
+        { successful-txs: new-successful
+        , failed-txs: new-failed
+        , total-volume: new-volume
+        , rating-sum: new-rating-sum
+        , rating-count: new-rating-count
+        , weighted-score: new-weighted-score
+        , last-updated: burn-block-height
+        , verification-level: (get verification-level current-rep) })
+      ;; Log reputation update event
+      (log-event "reputation-updated" principal none (some amount) none)
+      true)))
+
+;; Mutual rating function
+(define-public (rate-transaction (listing-id uint) (rating uint) (comment (optional (string-ascii 200))))
+  (begin
+    ;; Validate rating is between 1-5
+    (asserts! (and (>= rating u1) (<= rating u5)) ERR_INVALID_INPUT)
+    ;; Check transaction exists and caller was involved
+    (match (map-get? escrows { listing-id: listing-id })
+      escrow
+        (begin
+          ;; Only buyer or seller can rate, and only after completion
+          (asserts! (or (is-eq tx-sender (get buyer escrow)) (is-eq tx-sender (get seller escrow))) ERR_NOT_OWNER)
+          (asserts! (is-eq (get state escrow) "confirmed") ERR_INVALID_STATE)
+          ;; Check if already rated
+          (asserts! (is-none (map-get? transaction-ratings { listing-id: listing-id, rater: tx-sender })) ERR_INVALID_STATE)
+          ;; Record rating
+          (map-set transaction-ratings
+            { listing-id: listing-id, rater: tx-sender }
+            { rating: rating, comment: comment, timestamp: burn-block-height })
+          ;; Update reputation of the other party
+          (let ((other-party (if (is-eq tx-sender (get buyer escrow)) (get seller escrow) (get buyer escrow))))
+            (update-reputation-v2 other-party true (get amount escrow) (some rating)))
+          (ok true))
+      ERR_ESCROW_NOT_FOUND)))
 
 ;; Verify NFT ownership using SIP-009 standard (get-owner function)
 ;; Note: In Clarity, contract-call? with variable principals works at runtime
@@ -651,6 +753,9 @@
                 ;; Update reputation - successful transaction
                 (update-reputation seller true)
                 (update-reputation tx-sender true)
+                ;; Update enhanced reputation system
+                (update-reputation-v2 seller true price none)
+                (update-reputation-v2 tx-sender true price none)
                 ;; Update escrow state
                 (map-set escrows
                   { listing-id: listing-id }
