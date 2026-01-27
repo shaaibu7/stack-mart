@@ -142,10 +142,12 @@
 (define-map escrows
   { listing-id: uint }
   { buyer: principal
+  , seller: principal
   , amount: uint
   , created-at-block: uint
   , state: (string-ascii 20)
   , timeout-block: uint
+  , stx-held: bool
   })
 
 ;; Reputation system
@@ -426,28 +428,35 @@
     ERR_NOT_FOUND))
 
 ;; Create escrow for listing purchase
-;; Note: In Clarity, holding STX in contract requires the contract to receive funds first
-;; For now, we track escrow state. Actual STX transfer happens on release.
+;; Now properly holds STX in contract
 (define-public (buy-listing-escrow (id uint))
   (match (map-get? listings { id: id })
     listing
       (begin
+        ;; Security checks
+        (try! (check-reentrancy))
+        (try! (check-rate-limit tx-sender))
         ;; Check escrow doesn't already exist
         (asserts! (is-none (map-get? escrows { listing-id: id })) ERR_INVALID_STATE)
         (let (
               (price (get price listing))
+              (seller (get seller listing))
+              (timeout-block (+ burn-block-height ESCROW_TIMEOUT_BLOCKS))
              )
           (begin
-            ;; Create escrow record
-            ;; Note: STX should be transferred to contract address separately
-            ;; Timeout mechanism can be added later with proper block height function
+            ;; Actually transfer STX to contract for escrow
+            (try! (stx-transfer? price tx-sender (as-contract tx-sender)))
+            ;; Create escrow record with proper STX holding
             (map-set escrows
               { listing-id: id }
               { buyer: tx-sender
+              , seller: seller
               , amount: price
-              , created-at-block: u0
+              , created-at-block: burn-block-height
               , state: "pending"
-              , timeout-block: u0 })
+              , timeout-block: timeout-block
+              , stx-held: true })
+            (clear-reentrancy)
             (ok true))))
     ERR_NOT_FOUND))
 
@@ -491,10 +500,12 @@
                 (map-set escrows
                   { listing-id: listing-id }
                   { buyer: buyer
+                  , seller: tx-sender
                   , amount: (get amount escrow)
                   , created-at-block: (get created-at-block escrow)
                   , state: "delivered"
-                  , timeout-block: (get timeout-block escrow) })
+                  , timeout-block: (get timeout-block escrow)
+                  , stx-held: (get stx-held escrow) })
                 (ok true))))
         ERR_NOT_FOUND)
     ERR_ESCROW_NOT_FOUND))
@@ -526,13 +537,11 @@
                   (seller-share (- price royalty))
                  )
               (begin
-                ;; Transfer payments from escrow
-                ;; Note: In a full implementation, STX would be transferred from contract-held escrow
-                ;; For now, this is a placeholder - actual transfer requires contract to hold funds
+                ;; Transfer payments from contract-held escrow
                 (if (> royalty u0)
-                  (try! (stx-transfer? royalty tx-sender royalty-recipient))
+                  (try! (as-contract (stx-transfer? royalty tx-sender royalty-recipient)))
                   true)
-                (try! (stx-transfer? seller-share tx-sender seller))
+                (try! (as-contract (stx-transfer? seller-share tx-sender seller)))
                 ;; Update delivery attestation if exists
                 (match (map-get? delivery-attestations { listing-id: listing-id })
                   attestation
@@ -551,10 +560,12 @@
                 (map-set escrows
                   { listing-id: listing-id }
                   { buyer: (get buyer escrow)
+                  , seller: (get seller escrow)
                   , amount: price
                   , created-at-block: (get created-at-block escrow)
                   , state: "confirmed"
-                  , timeout-block: (get timeout-block escrow) })
+                  , timeout-block: (get timeout-block escrow)
+                  , stx-held: false })
                 ;; Record transaction history
                 (record-transaction seller listing-id tx-sender price true)
                 (record-transaction tx-sender listing-id seller price true)
