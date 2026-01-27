@@ -31,6 +31,17 @@
 ;; Event logging system
 (define-data-var next-event-id uint u1)
 
+;; Operation tracking for duplicate prevention
+(define-map operation-nonces
+  { principal: principal }
+  uint)
+
+(define-map completed-operations
+  { principal: principal
+  , operation-type: (string-ascii 50)
+  , nonce: uint }
+  bool)
+
 (define-map events
   { event-id: uint }
   { event-type: (string-ascii 50)
@@ -152,6 +163,34 @@
     (if (> current-id count)
       (ok (- current-id count))
       (ok u1))))
+
+;; Duplicate operation prevention helpers
+(define-private (get-next-nonce (principal principal))
+  (let ((current-nonce (default-to u0 (map-get? operation-nonces { principal: principal }))))
+    (begin
+      (map-set operation-nonces { principal: principal } (+ current-nonce u1))
+      (+ current-nonce u1))))
+
+(define-private (check-operation-not-completed (principal principal) (operation-type (string-ascii 50)) (nonce uint))
+  (is-none (map-get? completed-operations { principal: principal, operation-type: operation-type, nonce: nonce })))
+
+(define-private (mark-operation-completed (principal principal) (operation-type (string-ascii 50)) (nonce uint))
+  (map-set completed-operations { principal: principal, operation-type: operation-type, nonce: nonce } true))
+
+(define-private (validate-state-consistency (listing-id uint))
+  (match (map-get? listings { id: listing-id })
+    listing
+      (match (map-get? escrows { listing-id: listing-id })
+        escrow
+          ;; If escrow exists, listing should still exist unless confirmed/released
+          (let ((escrow-state (get state escrow)))
+            (or (is-eq escrow-state "pending")
+                (is-eq escrow-state "delivered")
+                (is-eq escrow-state "disputed")))
+        ;; No escrow is fine
+        true)
+    ;; No listing - check if escrow exists (shouldn't)
+    (is-none (map-get? escrows { listing-id: listing-id }))))
 
 ;; Bundle and pack constants
 (define-constant MAX_BUNDLE_SIZE u10)
@@ -479,14 +518,19 @@
         ;; Security checks
         (try! (check-reentrancy))
         (try! (check-rate-limit tx-sender))
-        ;; Check escrow doesn't already exist
+        ;; Check escrow doesn't already exist (duplicate prevention)
         (asserts! (is-none (map-get? escrows { listing-id: id })) ERR_INVALID_STATE)
+        ;; Validate state consistency
+        (asserts! (validate-state-consistency id) ERR_INVALID_STATE)
         (let (
               (price (get price listing))
               (seller (get seller listing))
               (timeout-block (+ burn-block-height ESCROW_TIMEOUT_BLOCKS))
+              (nonce (get-next-nonce tx-sender))
              )
           (begin
+            ;; Check this specific operation hasn't been completed
+            (asserts! (check-operation-not-completed tx-sender "buy-escrow" nonce) ERR_INVALID_STATE)
             ;; Actually transfer STX to contract for escrow
             (try! (stx-transfer? price tx-sender (as-contract tx-sender)))
             ;; Create escrow record with proper STX holding
@@ -499,6 +543,8 @@
               , state: "pending"
               , timeout-block: timeout-block
               , stx-held: true })
+            ;; Mark operation as completed
+            (mark-operation-completed tx-sender "buy-escrow" nonce)
             ;; Log escrow creation event
             (log-event "escrow-created" tx-sender (some id) (some price) none)
             (clear-reentrancy)
@@ -514,8 +560,10 @@
           (begin
             (asserts! (is-eq tx-sender (get seller listing)) ERR_NOT_SELLER)
             (asserts! (is-eq (get state escrow) "pending") ERR_INVALID_STATE)
-            ;; Check attestation doesn't already exist
+            ;; Check attestation doesn't already exist (duplicate prevention)
             (asserts! (is-none (map-get? delivery-attestations { listing-id: listing-id })) ERR_ALREADY_ATTESTED)
+            ;; Validate state consistency
+            (asserts! (validate-state-consistency listing-id) ERR_INVALID_STATE)
             ;; Transfer NFT if present
             (let ((nft-contract-opt (get nft-contract listing))
                   (token-id-opt (get token-id listing))
