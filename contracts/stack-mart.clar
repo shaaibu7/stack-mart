@@ -1538,3 +1538,274 @@
           (merge listing { view-count: (+ (get view-count listing) u1) }))
         (ok true))
     ERR_NOT_FOUND))
+
+;; ========================================
+;; OFFER AND NEGOTIATION SYSTEM
+;; ========================================
+
+;; Offer states: pending, accepted, rejected, countered, expired
+(define-map offers
+  { id: uint }
+  { listing-id: uint
+  , offerer: principal
+  , amount: uint
+  , expires-at: uint
+  , state: (string-ascii 20)
+  , created-at: uint
+  , message: (optional (string-ascii 200))
+  })
+
+;; Counter-offer tracking
+(define-map counter-offers
+  { original-offer-id: uint }
+  { counter-offer-id: uint
+  , counter-amount: uint
+  , counter-message: (optional (string-ascii 200))
+  , created-at: uint
+  })
+
+;; Offer history for listings
+(define-map listing-offers
+  { listing-id: uint }
+  { offer-ids: (list 20 uint) })
+
+;; User's active offers
+(define-map user-offers
+  { user: principal }
+  { offer-ids: (list 50 uint) })
+
+(define-data-var next-offer-id uint u1)
+
+;; Offer expiration constants
+(define-constant DEFAULT_OFFER_EXPIRY_BLOCKS u1440) ;; ~10 days assuming 10 min blocks
+(define-constant MAX_OFFER_EXPIRY_BLOCKS u4320)     ;; ~30 days max
+
+;; Helper function to add offer to listing index
+(define-private (add-offer-to-listing-index (listing-id uint) (offer-id uint))
+  (let ((current-offers (default-to (list) (get offer-ids (map-get? listing-offers { listing-id: listing-id })))))
+    (match (as-max-len? (append current-offers offer-id) u20)
+      updated-list
+        (begin
+          (map-set listing-offers { listing-id: listing-id } { offer-ids: updated-list })
+          true)
+      false))) ;; List full, ignore for now
+
+;; Helper function to add offer to user index
+(define-private (add-offer-to-user-index (user principal) (offer-id uint))
+  (let ((current-offers (default-to (list) (get offer-ids (map-get? user-offers { user: user })))))
+    (match (as-max-len? (append current-offers offer-id) u50)
+      updated-list
+        (begin
+          (map-set user-offers { user: user } { offer-ids: updated-list })
+          true)
+      false))) ;; List full, ignore for now
+
+;; Create an offer on a listing
+(define-public (create-offer 
+    (listing-id uint) 
+    (amount uint) 
+    (expiry-blocks uint)
+    (message (optional (string-ascii 200))))
+  (begin
+    ;; Security checks
+    (try! (check-reentrancy))
+    (try! (check-rate-limit tx-sender))
+    ;; Validate inputs
+    (asserts! (validate-price amount) ERR_INVALID_INPUT)
+    (asserts! (<= expiry-blocks MAX_OFFER_EXPIRY_BLOCKS) ERR_INVALID_INPUT)
+    ;; Check listing exists
+    (match (map-get? listings { id: listing-id })
+      listing
+        (begin
+          ;; Can't offer on own listing
+          (asserts! (not (is-eq tx-sender (get seller listing))) ERR_INVALID_INPUT)
+          ;; Check if listing also exists in v2 (prefer v2 if available)
+          (let ((listing-price (match (map-get? listings-v2 { id: listing-id })
+                  v2-listing (get price v2-listing)
+                  (get price listing)))
+                (offer-id (var-get next-offer-id))
+                (expires-at (+ burn-block-height (if (> expiry-blocks u0) expiry-blocks DEFAULT_OFFER_EXPIRY_BLOCKS))))
+            (begin
+              ;; Create offer
+              (map-set offers
+                { id: offer-id }
+                { listing-id: listing-id
+                , offerer: tx-sender
+                , amount: amount
+                , expires-at: expires-at
+                , state: "pending"
+                , created-at: burn-block-height
+                , message: message })
+              ;; Add to indices
+              (add-offer-to-listing-index listing-id offer-id)
+              (add-offer-to-user-index tx-sender offer-id)
+              (var-set next-offer-id (+ offer-id u1))
+              ;; Log offer creation event
+              (log-event "offer-created" tx-sender (some listing-id) (some amount) none)
+              (clear-reentrancy)
+              (ok offer-id))))
+      ERR_NOT_FOUND)))
+
+;; Accept an offer (seller only)
+(define-public (accept-offer (offer-id uint))
+  (match (map-get? offers { id: offer-id })
+    offer
+      (match (map-get? listings { id: (get listing-id offer) })
+        listing
+          (begin
+            ;; Only seller can accept
+            (asserts! (is-eq tx-sender (get seller listing)) ERR_NOT_OWNER)
+            ;; Offer must be pending and not expired
+            (asserts! (is-eq (get state offer) "pending") ERR_INVALID_STATE)
+            (asserts! (< burn-block-height (get expires-at offer)) ERR_EXPIRED_LISTING)
+            ;; Update offer state
+            (map-set offers
+              { id: offer-id }
+              (merge offer { state: "accepted" }))
+            ;; Create escrow with offer amount
+            (let ((listing-id (get listing-id offer))
+                  (offerer (get offerer offer))
+                  (offer-amount (get amount offer)))
+              (begin
+                ;; Create escrow with accepted offer amount
+                (map-set escrows
+                  { listing-id: listing-id }
+                  { buyer: offerer
+                  , seller: tx-sender
+                  , amount: offer-amount
+                  , created-at-block: burn-block-height
+                  , state: "pending"
+                  , timeout-block: (+ burn-block-height ESCROW_TIMEOUT_BLOCKS)
+                  , stx-held: false }) ;; Offerer will need to fund escrow
+                ;; Log offer acceptance event
+                (log-event "offer-accepted" tx-sender (some listing-id) (some offer-amount) none)
+                (ok true))))
+        ERR_NOT_FOUND)
+    ERR_NOT_FOUND))
+
+;; Reject an offer (seller only)
+(define-public (reject-offer (offer-id uint))
+  (match (map-get? offers { id: offer-id })
+    offer
+      (match (map-get? listings { id: (get listing-id offer) })
+        listing
+          (begin
+            ;; Only seller can reject
+            (asserts! (is-eq tx-sender (get seller listing)) ERR_NOT_OWNER)
+            ;; Offer must be pending
+            (asserts! (is-eq (get state offer) "pending") ERR_INVALID_STATE)
+            ;; Update offer state
+            (map-set offers
+              { id: offer-id }
+              (merge offer { state: "rejected" }))
+            ;; Log offer rejection event
+            (log-event "offer-rejected" tx-sender (some (get listing-id offer)) (some (get amount offer)) none)
+            (ok true))
+        ERR_NOT_FOUND)
+    ERR_NOT_FOUND))
+
+;; Create counter-offer (seller only)
+(define-public (create-counter-offer 
+    (original-offer-id uint) 
+    (counter-amount uint)
+    (counter-message (optional (string-ascii 200))))
+  (match (map-get? offers { id: original-offer-id })
+    original-offer
+      (match (map-get? listings { id: (get listing-id original-offer) })
+        listing
+          (begin
+            ;; Only seller can counter-offer
+            (asserts! (is-eq tx-sender (get seller listing)) ERR_NOT_OWNER)
+            ;; Original offer must be pending
+            (asserts! (is-eq (get state original-offer) "pending") ERR_INVALID_STATE)
+            ;; Validate counter amount
+            (asserts! (validate-price counter-amount) ERR_INVALID_INPUT)
+            ;; Create new offer as counter-offer
+            (let ((counter-offer-id (var-get next-offer-id))
+                  (listing-id (get listing-id original-offer))
+                  (original-offerer (get offerer original-offer)))
+              (begin
+                ;; Create counter-offer as new offer
+                (map-set offers
+                  { id: counter-offer-id }
+                  { listing-id: listing-id
+                  , offerer: tx-sender ;; Seller is now the offerer
+                  , amount: counter-amount
+                  , expires-at: (+ burn-block-height DEFAULT_OFFER_EXPIRY_BLOCKS)
+                  , state: "pending"
+                  , created-at: burn-block-height
+                  , message: counter-message })
+                ;; Link counter-offer to original
+                (map-set counter-offers
+                  { original-offer-id: original-offer-id }
+                  { counter-offer-id: counter-offer-id
+                  , counter-amount: counter-amount
+                  , counter-message: counter-message
+                  , created-at: burn-block-height })
+                ;; Update original offer state
+                (map-set offers
+                  { id: original-offer-id }
+                  (merge original-offer { state: "countered" }))
+                ;; Add to indices
+                (add-offer-to-listing-index listing-id counter-offer-id)
+                (add-offer-to-user-index tx-sender counter-offer-id)
+                (var-set next-offer-id (+ counter-offer-id u1))
+                ;; Log counter-offer creation event
+                (log-event "counter-offer-created" tx-sender (some listing-id) (some counter-amount) none)
+                (ok counter-offer-id))))
+        ERR_NOT_FOUND)
+    ERR_NOT_FOUND))
+
+;; Cancel an offer (offerer only, if pending)
+(define-public (cancel-offer (offer-id uint))
+  (match (map-get? offers { id: offer-id })
+    offer
+      (begin
+        ;; Only offerer can cancel
+        (asserts! (is-eq tx-sender (get offerer offer)) ERR_NOT_OWNER)
+        ;; Offer must be pending
+        (asserts! (is-eq (get state offer) "pending") ERR_INVALID_STATE)
+        ;; Update offer state
+        (map-set offers
+          { id: offer-id }
+          (merge offer { state: "cancelled" }))
+        ;; Log offer cancellation event
+        (log-event "offer-cancelled" tx-sender (some (get listing-id offer)) (some (get amount offer)) none)
+        (ok true))
+    ERR_NOT_FOUND))
+
+;; Get offer details
+(define-read-only (get-offer (offer-id uint))
+  (match (map-get? offers { id: offer-id })
+    offer (ok offer)
+    ERR_NOT_FOUND))
+
+;; Get counter-offer details
+(define-read-only (get-counter-offer (original-offer-id uint))
+  (match (map-get? counter-offers { original-offer-id: original-offer-id })
+    counter-offer (ok counter-offer)
+    ERR_NOT_FOUND))
+
+;; Get all offers for a listing
+(define-read-only (get-listing-offers (listing-id uint))
+  (match (map-get? listing-offers { listing-id: listing-id })
+    listing-offer-data (ok (get offer-ids listing-offer-data))
+    (ok (list))))
+
+;; Get all offers by a user
+(define-read-only (get-user-offers (user principal))
+  (match (map-get? user-offers { user: user })
+    user-offer-data (ok (get offer-ids user-offer-data))
+    (ok (list))))
+
+;; Check if offer is expired
+(define-read-only (is-offer-expired (offer-id uint))
+  (match (map-get? offers { id: offer-id })
+    offer (ok (>= burn-block-height (get expires-at offer)))
+    ERR_NOT_FOUND))
+
+;; Get active offers for a listing (non-expired, pending)
+(define-read-only (get-active-offers (listing-id uint))
+  ;; Simplified implementation - returns all offers for listing
+  ;; In full implementation, would filter by state and expiry
+  (get-listing-offers listing-id))
