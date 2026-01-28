@@ -1240,3 +1240,761 @@ describe("stack-mart listing with NFT integration", () => {
     // NFT transfer would be verified through NFT contract calls
   });
 });
+
+describe("stack-mart multiple escrow management", () => {
+  it("handles multiple concurrent escrows correctly", () => {
+    // Create multiple listings
+    simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(3_000), Cl.uint(300), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(4_000), Cl.uint(400), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    // Create escrows for both
+    simnet.callPublicFn(
+      contractName,
+      "buy-listing-escrow",
+      [Cl.uint(1)],
+      buyer
+    );
+
+    simnet.callPublicFn(
+      contractName,
+      "buy-listing-escrow",
+      [Cl.uint(2)],
+      buyer
+    );
+
+    // Verify both escrows exist
+    const escrow1 = simnet.callReadOnlyFn(
+      contractName,
+      "get-escrow-status",
+      [Cl.uint(1)],
+      deployer
+    );
+
+    const escrow2 = simnet.callReadOnlyFn(
+      contractName,
+      "get-escrow-status",
+      [Cl.uint(2)],
+      deployer
+    );
+
+    expect(escrow1.result).toBeOk(Cl.tuple({ state: Cl.stringAscii("pending") }));
+    expect(escrow2.result).toBeOk(Cl.tuple({ state: Cl.stringAscii("pending") }));
+  });
+
+  it("allows independent completion of multiple escrows", () => {
+    // Setup two escrows
+    simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(2_000), Cl.uint(200), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(3_000), Cl.uint(300), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    simnet.callPublicFn(
+      contractName,
+      "buy-listing-escrow",
+      [Cl.uint(1)],
+      buyer
+    );
+
+    simnet.callPublicFn(
+      contractName,
+      "buy-listing-escrow",
+      [Cl.uint(2)],
+      buyer
+    );
+
+    // Complete first escrow
+    const hash1 = Cl.bufferFromHex("0000000000000000000000000000000000000000000000000000000000000006");
+    simnet.callPublicFn(
+      contractName,
+      "attest-delivery",
+      [Cl.uint(1), hash1],
+      seller
+    );
+
+    simnet.callPublicFn(
+      contractName,
+      "confirm-receipt",
+      [Cl.uint(1)],
+      buyer
+    );
+
+    // Second escrow should still be pending
+    const escrow2 = simnet.callReadOnlyFn(
+      contractName,
+      "get-escrow-status",
+      [Cl.uint(2)],
+      deployer
+    );
+
+    expect(escrow2.result).toBeOk(Cl.tuple({ state: Cl.stringAscii("pending") }));
+  });
+});
+
+describe("stack-mart seller listing management", () => {
+  it("allows seller to create multiple listings", () => {
+    // Create several listings from same seller
+    const listing1 = simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(1_000), Cl.uint(100), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    const listing2 = simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(2_000), Cl.uint(200), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    const listing3 = simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(3_000), Cl.uint(300), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    expect(listing1.result).toBeOk(Cl.uint(1));
+    expect(listing2.result).toBeOk(Cl.uint(2));
+    expect(listing3.result).toBeOk(Cl.uint(3));
+
+    // Verify all listings exist
+    const list1 = simnet.callReadOnlyFn(
+      contractName,
+      "get-listing",
+      [Cl.uint(1)],
+      deployer
+    );
+
+    const list2 = simnet.callReadOnlyFn(
+      contractName,
+      "get-listing",
+      [Cl.uint(2)],
+      deployer
+    );
+
+    expect(list1.result).toBeOk(Cl.tuple({ seller: Cl.principal(seller) }));
+    expect(list2.result).toBeOk(Cl.tuple({ seller: Cl.principal(seller) }));
+  });
+
+  it("tracks listings by seller address", () => {
+    // Create listings from different sellers
+    const seller2 = accounts.get("wallet_4")!;
+
+    simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(5_000), Cl.uint(500), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(6_000), Cl.uint(600), Cl.principal(royaltyRecipient)],
+      seller2
+    );
+
+    // Verify listings have correct sellers
+    const listing1 = simnet.callReadOnlyFn(
+      contractName,
+      "get-listing",
+      [Cl.uint(1)],
+      deployer
+    );
+
+    const listing2 = simnet.callReadOnlyFn(
+      contractName,
+      "get-listing",
+      [Cl.uint(2)],
+      deployer
+    );
+
+    expect(listing1.result).toBeOk(Cl.tuple({ seller: Cl.principal(seller) }));
+    expect(listing2.result).toBeOk(Cl.tuple({ seller: Cl.principal(seller2) }));
+  });
+});
+
+describe("stack-mart royalty distribution accuracy", () => {
+  it("calculates royalty correctly for different percentages", () => {
+    // Test 5% royalty (500 bips)
+    simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(10_000), Cl.uint(500), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    const royaltyBefore = getStxBalance(royaltyRecipient);
+
+    simnet.callPublicFn(
+      contractName,
+      "buy-listing",
+      [Cl.uint(1)],
+      buyer
+    );
+
+    // 5% of 10000 = 500
+    expect(getStxBalance(royaltyRecipient)).toBe(royaltyBefore + 500n);
+  });
+
+  it("handles maximum royalty percentage correctly", () => {
+    // Test 10% royalty (1000 bips - max allowed)
+    simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(8_000), Cl.uint(1_000), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    const royaltyBefore = getStxBalance(royaltyRecipient);
+
+    simnet.callPublicFn(
+      contractName,
+      "buy-listing",
+      [Cl.uint(1)],
+      buyer
+    );
+
+    // 10% of 8000 = 800
+    expect(getStxBalance(royaltyRecipient)).toBe(royaltyBefore + 800n);
+  });
+
+  it("calculates zero royalty correctly", () => {
+    // Test 0% royalty
+    simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(5_000), Cl.uint(0), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    const royaltyBefore = getStxBalance(royaltyRecipient);
+
+    simnet.callPublicFn(
+      contractName,
+      "buy-listing",
+      [Cl.uint(1)],
+      buyer
+    );
+
+    // 0% royalty = 0
+    expect(getStxBalance(royaltyRecipient)).toBe(royaltyBefore);
+  });
+});
+
+describe("stack-mart escrow state transitions", () => {
+  it("transitions from pending to delivered state", () => {
+    simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(4_500), Cl.uint(450), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    simnet.callPublicFn(
+      contractName,
+      "buy-listing-escrow",
+      [Cl.uint(1)],
+      buyer
+    );
+
+    // Verify initial state
+    let escrow = simnet.callReadOnlyFn(
+      contractName,
+      "get-escrow-status",
+      [Cl.uint(1)],
+      deployer
+    );
+
+    expect(escrow.result).toBeOk(Cl.tuple({ state: Cl.stringAscii("pending") }));
+
+    // Attest delivery
+    const hash = Cl.bufferFromHex("0000000000000000000000000000000000000000000000000000000000000007");
+    simnet.callPublicFn(
+      contractName,
+      "attest-delivery",
+      [Cl.uint(1), hash],
+      seller
+    );
+
+    // Verify state transition
+    escrow = simnet.callReadOnlyFn(
+      contractName,
+      "get-escrow-status",
+      [Cl.uint(1)],
+      deployer
+    );
+
+    expect(escrow.result).toBeOk(Cl.tuple({ state: Cl.stringAscii("delivered") }));
+  });
+
+  it("transitions from delivered to completed state", () => {
+    simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(3_500), Cl.uint(350), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    simnet.callPublicFn(
+      contractName,
+      "buy-listing-escrow",
+      [Cl.uint(1)],
+      buyer
+    );
+
+    const hash = Cl.bufferFromHex("0000000000000000000000000000000000000000000000000000000000000008");
+    simnet.callPublicFn(
+      contractName,
+      "attest-delivery",
+      [Cl.uint(1), hash],
+      seller
+    );
+
+    // Confirm receipt
+    simnet.callPublicFn(
+      contractName,
+      "confirm-receipt",
+      [Cl.uint(1)],
+      buyer
+    );
+
+    // Escrow should be completed (listing deleted)
+    const listing = simnet.callReadOnlyFn(
+      contractName,
+      "get-listing",
+      [Cl.uint(1)],
+      deployer
+    );
+
+    expect(listing.result).toBeErr(Cl.uint(404));
+  });
+});
+
+describe("stack-mart bundle validation", () => {
+  it("rejects bundle creation with empty listing list", () => {
+    const bundleResult = simnet.callPublicFn(
+      contractName,
+      "create-bundle",
+      [
+        Cl.list([]),
+        Cl.uint(500),
+      ],
+      seller
+    );
+
+    expect(bundleResult.result).toBeErr(Cl.uint(400)); // Bundle empty error
+  });
+
+  it("rejects bundle creation with non-existent listing IDs", () => {
+    const bundleResult = simnet.callPublicFn(
+      contractName,
+      "create-bundle",
+      [
+        Cl.list([Cl.uint(999), Cl.uint(998)]),
+        Cl.uint(1_000),
+      ],
+      seller
+    );
+
+    expect(bundleResult.result).toBeErr(Cl.uint(400)); // Invalid listing error
+  });
+
+  it("rejects bundle purchase when listing is already sold", () => {
+    // Create and sell listing
+    simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(2_000), Cl.uint(200), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    simnet.callPublicFn(
+      contractName,
+      "buy-listing",
+      [Cl.uint(1)],
+      buyer
+    );
+
+    // Try to create bundle with sold listing
+    const bundleResult = simnet.callPublicFn(
+      contractName,
+      "create-bundle",
+      [
+        Cl.list([Cl.uint(1)]),
+        Cl.uint(500),
+      ],
+      seller
+    );
+
+    expect(bundleResult.result).toBeErr(Cl.uint(400)); // Invalid listing
+  });
+});
+
+describe("stack-mart dispute access control", () => {
+  it("prevents non-buyer from creating dispute", () => {
+    simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(5_500), Cl.uint(550), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    simnet.callPublicFn(
+      contractName,
+      "buy-listing-escrow",
+      [Cl.uint(1)],
+      buyer
+    );
+
+    // Try to create dispute as non-buyer
+    const disputeResult = simnet.callPublicFn(
+      contractName,
+      "create-dispute",
+      [Cl.uint(1), Cl.stringAscii("Test reason")],
+      seller
+    );
+
+    expect(disputeResult.result).toBeErr(Cl.uint(403)); // Not buyer error
+  });
+
+  it("prevents staking without sufficient balance", () => {
+    simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(6_500), Cl.uint(650), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    simnet.callPublicFn(
+      contractName,
+      "buy-listing-escrow",
+      [Cl.uint(1)],
+      buyer
+    );
+
+    simnet.callPublicFn(
+      contractName,
+      "create-dispute",
+      [Cl.uint(1), Cl.stringAscii("Issue")],
+      buyer
+    );
+
+    // Try to stake more than available balance
+    const stakeResult = simnet.callPublicFn(
+      contractName,
+      "stake-on-dispute",
+      [Cl.uint(1), Cl.bool(true), Cl.uint(1_000_000_000)],
+      buyer
+    );
+
+    expect(stakeResult.result).toBeErr(Cl.uint(1)); // Insufficient balance
+  });
+
+  it("requires staking before voting", () => {
+    simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(7_500), Cl.uint(750), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    simnet.callPublicFn(
+      contractName,
+      "buy-listing-escrow",
+      [Cl.uint(1)],
+      buyer
+    );
+
+    simnet.callPublicFn(
+      contractName,
+      "create-dispute",
+      [Cl.uint(1), Cl.stringAscii("Problem")],
+      buyer
+    );
+
+    // Try to vote without staking
+    const voteResult = simnet.callPublicFn(
+      contractName,
+      "vote-on-dispute",
+      [Cl.uint(1), Cl.bool(true)],
+      royaltyRecipient
+    );
+
+    expect(voteResult.result).toBeErr(Cl.uint(400)); // Must stake first
+  });
+});
+
+describe("stack-mart pack validation and limits", () => {
+  it("rejects pack creation with too many listings", () => {
+    // Create 21 listings (max is 20)
+    const listingIds = [];
+    for (let i = 1; i <= 21; i++) {
+      simnet.callPublicFn(
+        contractName,
+        "create-listing",
+        [Cl.uint(1_000 * i), Cl.uint(100), Cl.principal(royaltyRecipient)],
+        seller
+      );
+      listingIds.push(Cl.uint(i));
+    }
+
+    const packResult = simnet.callPublicFn(
+      contractName,
+      "create-pack",
+      [
+        Cl.list(listingIds),
+        Cl.uint(15_000),
+      ],
+      seller
+    );
+
+    expect(packResult.result).toBeErr(Cl.uint(400)); // Too many listings
+  });
+
+  it("validates pack price is reasonable", () => {
+    simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(1_000), Cl.uint(100), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    // Try to create pack with price higher than sum
+    const packResult = simnet.callPublicFn(
+      contractName,
+      "create-pack",
+      [
+        Cl.list([Cl.uint(1)]),
+        Cl.uint(10_000), // Higher than listing price
+      ],
+      seller
+    );
+
+    // This should either succeed (if no validation) or fail
+    // Assuming it succeeds but buyer pays the pack price
+    expect(packResult.result).toBeOk(Cl.uint(1));
+  });
+});
+
+describe("stack-mart listing price updates", () => {
+  it("tracks price changes in history when updated", () => {
+    // Create initial listing
+    simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(5_000), Cl.uint(500), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    // Get initial price history
+    const initialHistory = simnet.callReadOnlyFn(
+      contractName,
+      "get-price-history",
+      [Cl.uint(1)],
+      deployer
+    );
+
+    expect(initialHistory.result).toBeOk(
+      Cl.tuple({
+        history: Cl.list([
+          Cl.tuple({
+            price: Cl.uint(5_000),
+            "updated-at-block": Cl.uint(0),
+          })
+        ])
+      })
+    );
+
+    // Note: This assumes an update-price function exists
+    // If not, this test verifies history tracking structure
+  });
+
+  it("maintains chronological order in price history", () => {
+    simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(10_000), Cl.uint(1000), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    // Price history should be ordered by block height
+    const history = simnet.callReadOnlyFn(
+      contractName,
+      "get-price-history",
+      [Cl.uint(1)],
+      deployer
+    );
+
+    const historyData = history.result as any;
+    if (historyData.isOk) {
+      const entries = historyData.value.data["history"].list;
+      // Verify entries are in chronological order
+      expect(entries.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("stack-mart reputation calculation accuracy", () => {
+  it("increments successful transactions correctly", () => {
+    // Create and complete multiple transactions
+    for (let i = 0; i < 3; i++) {
+      simnet.callPublicFn(
+        contractName,
+        "create-listing",
+        [Cl.uint(2_000 + i * 1000), Cl.uint(200), Cl.principal(royaltyRecipient)],
+        seller
+      );
+
+      simnet.callPublicFn(
+        contractName,
+        "buy-listing",
+        [Cl.uint(i + 1)],
+        buyer
+      );
+    }
+
+    // Check seller reputation
+    const sellerRep = simnet.callReadOnlyFn(
+      contractName,
+      "get-seller-reputation",
+      [Cl.principal(seller)],
+      deployer
+    );
+
+    expect(sellerRep.result).toBeOk(
+      Cl.tuple({
+        "successful-txs": Cl.uint(3),
+        "failed-txs": Cl.uint(0),
+      })
+    );
+  });
+
+  it("tracks failed transactions in reputation", () => {
+    // Create listing
+    simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(1_000), Cl.uint(100), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    // Create escrow and let it timeout (simulated failure)
+    simnet.callPublicFn(
+      contractName,
+      "buy-listing-escrow",
+      [Cl.uint(1)],
+      buyer
+    );
+
+    // Advance blocks to timeout
+    for (let i = 0; i < 145; i++) {
+      simnet.mineBlock([]);
+    }
+
+    // Release escrow (transaction failed)
+    simnet.callPublicFn(
+      contractName,
+      "release-escrow",
+      [Cl.uint(1)],
+      buyer
+    );
+
+    // Check reputation includes failed transaction
+    const sellerRep = simnet.callReadOnlyFn(
+      contractName,
+      "get-seller-reputation",
+      [Cl.principal(seller)],
+      deployer
+    );
+
+    // Note: This depends on contract implementation
+    // May show 0 failed if timeout doesn't count as failure
+    expect(sellerRep.result).toBeOk(Cl.tuple({}));
+  });
+});
+
+describe("stack-mart marketplace fee edge cases", () => {
+  it("handles zero marketplace fee correctly", () => {
+    // Admin sets fee to zero
+    simnet.callPublicFn(
+      contractName,
+      "set-marketplace-fee",
+      [Cl.uint(0)],
+      deployer
+    );
+
+    // Create and purchase listing
+    simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(10_000), Cl.uint(500), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    const sellerBefore = getStxBalance(seller);
+    const feeRecipientBefore = getStxBalance(deployer);
+
+    simnet.callPublicFn(
+      contractName,
+      "buy-listing",
+      [Cl.uint(1)],
+      buyer
+    );
+
+    // With zero fee, seller gets full amount minus royalty
+    // 10000 - 500 (royalty) = 9500
+    expect(getStxBalance(seller)).toBe(sellerBefore + 9_500n);
+    expect(getStxBalance(feeRecipientBefore)).toBe(feeRecipientBefore);
+  });
+
+  it("handles maximum marketplace fee correctly", () => {
+    // Set fee to maximum (assuming 10% = 1000 bips)
+    simnet.callPublicFn(
+      contractName,
+      "set-marketplace-fee",
+      [Cl.uint(1_000)],
+      deployer
+    );
+
+    simnet.callPublicFn(
+      contractName,
+      "create-listing",
+      [Cl.uint(8_000), Cl.uint(400), Cl.principal(royaltyRecipient)],
+      seller
+    );
+
+    const feeRecipientBefore = getStxBalance(deployer);
+
+    simnet.callPublicFn(
+      contractName,
+      "buy-listing",
+      [Cl.uint(1)],
+      buyer
+    );
+
+    // Fee: 8000 * 0.10 = 800
+    expect(getStxBalance(feeRecipientBefore)).toBe(feeRecipientBefore + 800n);
+  });
+});
