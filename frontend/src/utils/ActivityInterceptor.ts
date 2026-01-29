@@ -1,5 +1,6 @@
 import { openContractCall } from '@stacks/connect';
 import { StacksNetwork } from '@stacks/network';
+import { ReferralManager } from './ReferralManager';
 
 /**
  * ActivityInterceptor Utility
@@ -54,7 +55,12 @@ export class ActivityInterceptor {
             const response = await fetch(this.reportEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ type, metadata, timestamp: Date.now() })
+                body: JSON.stringify({
+                    type,
+                    metadata,
+                    timestamp: Date.now(),
+                    referralCode: ReferralManager.getReferralData().code
+                })
             });
 
             return response.ok;
