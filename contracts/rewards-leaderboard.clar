@@ -133,6 +133,40 @@
     )
 )
 
+;; Public: Log GitHub Contributions
+;; Restricted to contract owner (admin/oracle)
+(define-public (log-github-contribution (user principal) (points uint))
+    (let (
+        (current-stats (default-to 
+            {
+                total-points: u0,
+                contract-impact-points: u0,
+                library-usage-points: u0,
+                github-contrib-points: u0,
+                last-activity-block: block-height,
+                reputation-score: u0
+            }
+            (map-get? UserPoints user)
+        ))
+    )
+        ;; Check authorization
+        (asserts! (is-eq tx-sender ADMIN) ERR-NOT-AUTHORIZED)
+        
+        ;; Check for overflow
+        (asserts! (< (+ (get total-points current-stats) points) u340282366920938463463374607431768211455) ERR-BUFFER-OVERFLOW)
+        
+        (map-set UserPoints user
+            (merge current-stats {
+                total-points: (+ (get total-points current-stats) points),
+                github-contrib-points: (+ (get github-contrib-points current-stats) points),
+                last-activity-block: block-height
+            })
+        )
+        (update-global-stats points)
+        (ok true)
+    )
+)
+
 ;; Internal: Update Global Accumulators
 (define-private (update-global-stats (new-points uint))
     (let (
