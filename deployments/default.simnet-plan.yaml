@@ -68,4 +68,9 @@ plan:
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/stack-mart.clar
             clarity-version: 4
+        - emulated-contract-publish:
+            contract-name: mock-nft
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/mock-nft.clar
+            clarity-version: 4
       epoch: "3.3"

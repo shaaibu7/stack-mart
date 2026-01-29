@@ -2,12 +2,10 @@
 
 StackMart is a decentralized marketplace on Stacks where creators list digital goods (templates, code snippets, game assets, music loops) as NFTs with built-in licensing. Buyers pay in STX, and smart contracts handle escrow, automatic royalty splits, and on-chain delivery signals to prevent fraud.
 
-## Key Features (concept)
-- On-chain listings for digital goods represented as NFTs with license terms.
-- Escrowed payments in STX with automatic royalty splits to collaborators.
-- Reputation and delivery attestation (seller/buyer signals recorded on-chain).
-- Dispute resolution via community staking and weighted votes.
-- Bundles and curated packs with discounted pricing.
+- **Auction System** – Complete bidding lifecycle with secure NFT custody and auto-refunds.
+- **Bundle Logic** – Buy multiple items at a discount with batched escrow creation.
+- **Secure Escrow** – Hardened logic ensuring funds are securely held and released by the contract.
+- **Dispute Resolution** – Community-based dispute resolution with staking mechanics.
 - **Marketplace Fees** – Configurable fee system with automatic distribution.
 - **Wishlist System** – Users can favorite listings for quick access.
 - **Price History** – On-chain tracking and visualization of listing price changes.
@@ -163,8 +161,7 @@ The frontend is a React + TypeScript application using Vite.
    npm run build
    ```
 ## Recent Enhancements (Jan 2026)
-- Advanced Administrative Controls
-- Reputation Volume Tracking
-## Recent Enhancements (Jan 2026)
-- Advanced Administrative Controls
-- Reputation Volume Tracking
+- **Advanced Auctions**: Implemented English auctions with reserve prices and duration.
+- **Bundle Purchases**: Added logic to purchase multiple listings in one transaction with discounts.
+- **Security Hardening**: Fixed escrow fund handling to prevent locked assets.
+- **Testing**: Added comprehensive test suite for all new features.

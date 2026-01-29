@@ -446,6 +446,7 @@ function App() {
 
         {activeTab === 'dashboard' && (
           <Dashboard />
+{activeTab === "auctions" && ( <section><h2>🔨 Active Auctions</h2><div className="grid grid-cols-1">No active auctions found.</div></section> )}
         )}
 
           <section>
