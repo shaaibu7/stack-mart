@@ -63,3 +63,52 @@
         }
     )
 )
+
+;; Public: Log Smart Contract Activity
+;; Increments points based on contract interaction and impact
+(define-public (log-contract-activity (user principal) (impact-score uint))
+    (let (
+        (current-stats (default-to 
+            {
+                total-points: u0,
+                contract-impact-points: u0,
+                library-usage-points: u0,
+                github-contrib-points: u0,
+                last-activity-block: block-height,
+                reputation-score: u0
+            }
+            (map-get? UserPoints user)
+        ))
+        (base-points POINTS-PER-CONTRACT-ACTIVITY)
+        (impact-bonus (* impact-score u10))
+        (total-new-points (+ base-points impact-bonus))
+    )
+        ;; Check for overflow
+        (asserts! (< (+ (get total-points current-stats) total-new-points) u340282366920938463463374607431768211455) ERR-BUFFER-OVERFLOW)
+        
+        (map-set UserPoints user
+            (merge current-stats {
+                total-points: (+ (get total-points current-stats) total-new-points),
+                contract-impact-points: (+ (get contract-impact-points current-stats) total-new-points),
+                last-activity-block: block-height
+            })
+        )
+        (update-global-stats total-new-points)
+        (ok true)
+    )
+)
+
+;; Internal: Update Global Accumulators
+(define-private (update-global-stats (new-points uint))
+    (let (
+        (current-global (get-global-stats))
+    )
+        (map-set GlobalStats u0
+            {
+                total-users: (+ (get total-users current-global) u1),
+                total-points-distributed: (+ (get total-points-distributed current-global) new-points),
+                top-score: (if (> new-points (get top-score current-global)) new-points (get top-score current-global))
+            }
+        )
+    )
+)
