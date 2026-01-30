@@ -47,3 +47,15 @@
 (define-data-var next-token-id uint u1)
 (define-data-var base-uri (string-ascii 256) CONTRACT-BASE-URI)
 (define-data-var contract-paused bool false)
+
+;; ============================================================================
+;; SIP-090 STANDARD INTERFACE FUNCTIONS
+;; ============================================================================
+
+;; Get the last token ID that was minted
+(define-read-only (get-last-token-id)
+  (ok (- (var-get next-token-id) u1)))
+
+;; Get total supply of minted tokens
+(define-read-only (get-total-supply)
+  (ok (var-get total-supply)))
