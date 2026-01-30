@@ -1,0 +1,54 @@
+# SIP-090 NFT Contract Deployment Configuration
+# This file defines deployment parameters for the StackMart NFT contract
+
+plan:
+  id: 0
+  name: "SIP-090 NFT Deployment"
+  description: "Deploy StackMart SIP-090 compliant NFT contract"
+  
+network: simnet
+
+genesis:
+  wallets:
+    - name: deployer
+      address: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+      balance: 100000000000000
+    - name: wallet_1
+      address: ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5
+      balance: 100000000000000
+    - name: wallet_2
+      address: ST2CY5V39NHDPWSXMW9QDT3HC3GD6Q6XX4CFRK9AG
+      balance: 100000000000000
+
+contracts:
+  - contract-id: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sip-090-nft
+    path: contracts/sip-090-nft.clar
+    clarity-version: 2
+    
+deployment-steps:
+  - name: "Deploy SIP-090 NFT Contract"
+    contract: sip-090-nft
+    deployer: deployer
+    
+  - name: "Initialize Contract"
+    description: "Contract is automatically initialized on deployment"
+    
+  - name: "Verify Deployment"
+    description: "Check contract functions are accessible"
+    
+post-deployment:
+  - name: "Test Basic Functions"
+    description: "Verify get-contract-info and other read-only functions"
+    
+  - name: "Test Minting"
+    description: "Test minting functionality with deployer account"
+    
+  - name: "Test Transfers"
+    description: "Test transfer functionality between wallets"
+
+configuration:
+  contract-name: "StackMart NFT"
+  contract-symbol: "SMNFT"
+  base-uri: "https://api.stackmart.io/nft/"
+  max-supply: 10000
+  initial-owner: "ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM"
