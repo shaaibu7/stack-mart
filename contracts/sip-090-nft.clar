@@ -231,3 +231,41 @@
 (define-private (validate-admin-authorization)
   (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-NOT-AUTHORIZED)
   (ok true))
+;; ============================================================================
+;; ADMINISTRATIVE FUNCTIONS
+;; ============================================================================
+
+;; Update base URI for metadata (owner only)
+(define-public (set-base-uri (new-base-uri (string-ascii 256)))
+  (begin
+    (try! (validate-admin-authorization))
+    (var-set base-uri new-base-uri)
+    (print {
+      type: "base_uri_updated",
+      old-uri: (var-get base-uri),
+      new-uri: new-base-uri
+    })
+    (ok true)))
+
+;; Set custom metadata URI for specific token (owner only)
+(define-public (set-token-uri (token-id uint) (metadata-uri (string-ascii 256)))
+  (begin
+    (try! (validate-admin-authorization))
+    (try! (validate-token-exists token-id))
+    (map-set token-uris token-id metadata-uri)
+    (print {
+      type: "token_uri_updated",
+      token-id: token-id,
+      new-uri: metadata-uri
+    })
+    (ok true)))
+
+;; Get tokens owned by a specific principal
+(define-read-only (get-tokens-by-owner (owner principal))
+  (ok (default-to (list) (map-get? owner-tokens owner))))
+
+;; Check if a principal owns a specific token
+(define-read-only (is-token-owner (token-id uint) (principal-to-check principal))
+  (match (map-get? token-owners token-id)
+    owner (ok (is-eq owner principal-to-check))
+    (ok false)))
