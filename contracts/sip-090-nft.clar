@@ -82,3 +82,18 @@
     (uint-to-ascii-helper 
       (/ value u10) 
       (concat (unwrap-panic (element-at "0123456789" (mod value u10))) result))))
+;; Get owner of a specific token
+(define-read-only (get-owner (token-id uint))
+  (match (map-get? token-owners token-id)
+    owner (ok (some owner))
+    ERR-NOT-FOUND))
+
+;; Get contract information
+(define-read-only (get-contract-info)
+  (ok {
+    name: CONTRACT-NAME,
+    symbol: CONTRACT-SYMBOL,
+    base-uri: (var-get base-uri),
+    total-supply: (var-get total-supply),
+    max-supply: MAX-SUPPLY
+  }))
