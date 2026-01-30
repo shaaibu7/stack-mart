@@ -140,3 +140,59 @@
     })
     
     (ok token-id)))
+;; ============================================================================
+;; TRANSFER FUNCTIONS
+;; ============================================================================
+
+;; Transfer NFT from sender to recipient (SIP-090 standard)
+(define-public (transfer (token-id uint) (sender principal) (recipient principal))
+  (let ((current-owner (unwrap! (map-get? token-owners token-id) ERR-NOT-FOUND)))
+    ;; Check if contract is paused
+    (asserts! (not (var-get contract-paused)) ERR-CONTRACT-PAUSED)
+    ;; Check if sender is the actual owner
+    (asserts! (is-eq sender current-owner) ERR-INVALID-OWNER)
+    ;; Check if caller is authorized (must be the owner)
+    (asserts! (is-eq tx-sender sender) ERR-NOT-AUTHORIZED)
+    ;; Check for valid recipient
+    (asserts! (not (is-eq sender recipient)) ERR-INVALID-PARAMETERS)
+    
+    ;; Update token ownership
+    (map-set token-owners token-id recipient)
+    
+    ;; Update sender's token list
+    (let ((sender-tokens (default-to (list) (map-get? owner-tokens sender))))
+      (map-set owner-tokens sender (filter-token-from-list sender-tokens token-id)))
+    
+    ;; Update recipient's token list
+    (let ((recipient-tokens (default-to (list) (map-get? owner-tokens recipient))))
+      (map-set owner-tokens recipient (unwrap! (as-max-len? (append recipient-tokens token-id) u500) ERR-INVALID-PARAMETERS)))
+    
+    ;; Emit transfer event
+    (print {
+      type: "nft_transfer_event",
+      token-contract: (as-contract tx-sender),
+      token-id: token-id,
+      sender: sender,
+      recipient: recipient
+    })
+    
+    (ok true)))
+
+;; Helper function to remove token from owner's list
+(define-private (filter-token-from-list (token-list (list 500 uint)) (token-to-remove uint))
+  (filter is-not-target-token token-list))
+
+(define-private (is-not-target-token (token-id uint))
+  (not (is-eq token-id token-to-remove)))
+
+;; We need to define token-to-remove as a data variable for the filter to work
+(define-data-var token-to-remove uint u0)
+
+;; Updated helper function using data variable
+(define-private (filter-token-from-list-v2 (token-list (list 500 uint)) (token-to-remove uint))
+  (begin
+    (var-set token-to-remove token-to-remove)
+    (filter is-not-target-token-v2 token-list)))
+
+(define-private (is-not-target-token-v2 (token-id uint))
+  (not (is-eq token-id (var-get token-to-remove))))
