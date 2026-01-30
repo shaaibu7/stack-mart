@@ -59,3 +59,26 @@
 ;; Get total supply of minted tokens
 (define-read-only (get-total-supply)
   (ok (var-get total-supply)))
+
+;; Get token URI for metadata
+(define-read-only (get-token-uri (token-id uint))
+  (match (map-get? token-uris token-id)
+    uri (ok (some uri))
+    (if (is-some (map-get? token-owners token-id))
+      ;; Token exists but no specific URI, use base URI + token ID
+      (ok (some (concat (var-get base-uri) (uint-to-ascii token-id))))
+      ;; Token doesn't exist
+      ERR-NOT-FOUND)))
+
+;; Helper function to convert uint to ascii
+(define-private (uint-to-ascii (value uint))
+  (if (is-eq value u0)
+    "0"
+    (uint-to-ascii-helper value "")))
+
+(define-private (uint-to-ascii-helper (value uint) (result (string-ascii 10)))
+  (if (is-eq value u0)
+    result
+    (uint-to-ascii-helper 
+      (/ value u10) 
+      (concat (unwrap-panic (element-at "0123456789" (mod value u10))) result))))
