@@ -97,3 +97,46 @@
     total-supply: (var-get total-supply),
     max-supply: MAX-SUPPLY
   }))
+;; ============================================================================
+;; MINTING FUNCTIONS
+;; ============================================================================
+
+;; Mint a new NFT to a recipient
+(define-public (mint (recipient principal) (metadata-uri (optional (string-ascii 256))))
+  (let ((token-id (var-get next-token-id))
+        (current-supply (var-get total-supply)))
+    ;; Check if contract is paused
+    (asserts! (not (var-get contract-paused)) ERR-CONTRACT-PAUSED)
+    ;; Check if max supply reached
+    (asserts! (< current-supply MAX-SUPPLY) ERR-MAX-SUPPLY-REACHED)
+    ;; Check if caller is authorized (contract owner for now)
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-NOT-AUTHORIZED)
+    ;; Check if token already exists (shouldn't happen with proper ID generation)
+    (asserts! (is-none (map-get? token-owners token-id)) ERR-ALREADY-EXISTS)
+    
+    ;; Set token owner
+    (map-set token-owners token-id recipient)
+    
+    ;; Set metadata URI if provided
+    (match metadata-uri
+      uri (map-set token-uris token-id uri)
+      true)
+    
+    ;; Update owner's token list
+    (let ((current-tokens (default-to (list) (map-get? owner-tokens recipient))))
+      (map-set owner-tokens recipient (unwrap! (as-max-len? (append current-tokens token-id) u500) ERR-INVALID-PARAMETERS)))
+    
+    ;; Update counters
+    (var-set next-token-id (+ token-id u1))
+    (var-set total-supply (+ current-supply u1))
+    
+    ;; Emit mint event
+    (print {
+      type: "nft_mint_event",
+      token-contract: (as-contract tx-sender),
+      token-id: token-id,
+      recipient: recipient,
+      metadata-uri: metadata-uri
+    })
+    
+    (ok token-id)))
