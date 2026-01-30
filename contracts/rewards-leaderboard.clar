@@ -756,3 +756,62 @@
 (define-read-only (get-event (event-id uint))
     (map-get? ActiveEvents event-id)
 )
+
+;; ============================================================================
+;; PAGINATION & ACTIVITY LOGGING
+;; ============================================================================
+
+;; Detailed Activity Logs
+(define-map UserActivityLogs
+    { user: principal, log-id: uint }
+    {
+        activity-type: (string-ascii 20),
+        points-earned: uint,
+        timestamp: uint,
+        metadata: (string-ascii 50)
+    }
+)
+
+(define-map UserLogCount principal uint)
+
+;; Internal: Log Activity Detail
+(define-private (log-activity-detail (user principal) (activity-type (string-ascii 20)) (points uint) (meta (string-ascii 50)))
+    (let ((count (default-to u0 (map-get? UserLogCount user))))
+        (map-set UserActivityLogs
+            { user: user, log-id: count }
+            {
+                activity-type: activity-type,
+                points-earned: points,
+                timestamp: burn-block-height,
+                metadata: meta
+            }
+        )
+        (map-set UserLogCount user (+ count u1))
+        true
+    )
+)
+
+;; Read-only: Get User Activity Log
+(define-read-only (get-user-activity-log (user principal) (log-id uint))
+    (map-get? UserActivityLogs { user: user, log-id: log-id })
+)
+
+;; Read-only: Get Total Log Count
+(define-read-only (get-user-log-count (user principal))
+    (default-to u0 (map-get? UserLogCount user))
+)
+
+;; Read-only: Get Total Active Users
+(define-read-only (get-active-user-count)
+    (get total-users (get-global-stats))
+)
+
+;; Read-only: Mock Paginated Leaderboard
+;; In a real production contract, this would interface with an off-chain indexer
+;; but for this implementation, we provide the interface for the frontend.
+(define-read-only (get-leaderboard-page (offset uint) (limit uint))
+    (ok {
+        users: (list), ;; To be populated via off-chain indexing or specific principal lists
+        total: (get total-users (get-global-stats))
+    })
+)
