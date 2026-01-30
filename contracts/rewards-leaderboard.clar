@@ -622,3 +622,71 @@
 (define-read-only (get-current-month-id)
     (ok (/ burn-block-height (* BLOCKS-PER-DAY u30)))
 )
+
+;; ============================================================================
+;; REWARD CLAIMING SYSTEM
+;; ============================================================================
+
+;; Claimable Rewards Tracking
+(define-map ClaimableRewards principal uint)
+(define-map ClaimHistory 
+    { user: principal, claim-id: uint }
+    { amount: uint, claimed-at-block: uint }
+)
+(define-map UserClaimCount principal uint)
+
+;; Read-only: Get Claimable Rewards
+(define-read-only (get-claimable-rewards (user principal))
+    (ok (default-to u0 (map-get? ClaimableRewards user)))
+)
+
+;; Admin: Add Claimable Rewards
+(define-public (add-claimable-rewards (user principal) (amount uint))
+    (begin
+        (asserts! (is-eq tx-sender ADMIN) ERR-NOT-AUTHORIZED)
+        (asserts! (> amount u0) ERR-INVALID-POINTS)
+        
+        (let ((current-claimable (default-to u0 (map-get? ClaimableRewards user))))
+            (map-set ClaimableRewards user (+ current-claimable amount))
+            (print { event: "rewards-added", user: user, amount: amount })
+            (ok true)
+        )
+    )
+)
+
+;; Public: Claim Rewards
+(define-public (claim-rewards)
+    (let (
+        (claimable (default-to u0 (map-get? ClaimableRewards tx-sender)))
+        (claim-count (default-to u0 (map-get? UserClaimCount tx-sender)))
+    )
+        (asserts! (> claimable u0) ERR-INVALID-POINTS)
+        
+        ;; Add to user's total points
+        (let ((current-stats (unwrap! (get-user-stats tx-sender) ERR-USER-NOT-FOUND)))
+            (map-set UserPoints tx-sender
+                (merge current-stats {
+                    total-points: (+ (get total-points current-stats) claimable)
+                })
+            )
+        )
+        
+        ;; Record claim history
+        (map-set ClaimHistory 
+            { user: tx-sender, claim-id: claim-count }
+            { amount: claimable, claimed-at-block: burn-block-height }
+        )
+        
+        ;; Update claim count and reset claimable
+        (map-set UserClaimCount tx-sender (+ claim-count u1))
+        (map-set ClaimableRewards tx-sender u0)
+        
+        (print { event: "rewards-claimed", user: tx-sender, amount: claimable })
+        (ok claimable)
+    )
+)
+
+;; Read-only: Get Claim History
+(define-read-only (get-claim-history (user principal) (claim-id uint))
+    (map-get? ClaimHistory { user: user, claim-id: claim-id })
+)
