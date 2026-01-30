@@ -20,6 +20,23 @@
 (define-constant BLOCKS-PER-DAY u144) ;; Rough estimate for Stacks
 (define-constant DECAY-FACTOR u95) ;; 5% decay periodically
 
+;; Tier System Constants
+(define-constant TIER-BRONZE u0)
+(define-constant TIER-SILVER u1)
+(define-constant TIER-GOLD u2)
+(define-constant TIER-PLATINUM u3)
+(define-constant TIER-DIAMOND u4)
+(define-constant TIER-BRONZE-THRESHOLD u0)
+(define-constant TIER-SILVER-THRESHOLD u1000)
+(define-constant TIER-GOLD-THRESHOLD u5000)
+(define-constant TIER-PLATINUM-THRESHOLD u15000)
+(define-constant TIER-DIAMOND-THRESHOLD u50000)
+(define-constant TIER-BRONZE-MULTIPLIER u100) ;; 1.0x = 100
+(define-constant TIER-SILVER-MULTIPLIER u110) ;; 1.1x = 110
+(define-constant TIER-GOLD-MULTIPLIER u125) ;; 1.25x = 125
+(define-constant TIER-PLATINUM-MULTIPLIER u150) ;; 1.5x = 150
+(define-constant TIER-DIAMOND-MULTIPLIER u200) ;; 2.0x = 200
+
 ;; Data Variables
 (define-data-var contract-paused bool false)
 (define-data-var activity-point-base uint u50)
@@ -57,6 +74,13 @@
         current-streak: uint,
         last-activity-block: uint
     }
+)
+
+;; Tier Tracking
+(define-map UserTiers principal uint)
+(define-map TierUpgradeEvents 
+    { user: principal, tier: uint } 
+    { upgraded-at-block: uint, points-at-upgrade: uint }
 )
 
 ;; Read-only: Get User Stats
@@ -121,6 +145,7 @@
             })
         )
         (update-streak user)
+        (check-and-update-tier user (+ (get total-points current-stats) total-new-points))
         (update-global-stats total-new-points)
         (ok true)
     )
@@ -379,4 +404,70 @@
             }
         )
     )
+)
+
+;; ============================================================================
+;; TIER SYSTEM
+;; ============================================================================
+
+;; Read-only: Get User Tier
+(define-read-only (get-user-tier (user principal))
+    (let (
+        (stats (get-user-stats user))
+    )
+        (match stats
+            user-stats 
+                (let ((points (get total-points user-stats)))
+                    (ok (if (>= points TIER-DIAMOND-THRESHOLD) TIER-DIAMOND
+                        (if (>= points TIER-PLATINUM-THRESHOLD) TIER-PLATINUM
+                            (if (>= points TIER-GOLD-THRESHOLD) TIER-GOLD
+                                (if (>= points TIER-SILVER-THRESHOLD) TIER-SILVER
+                                    TIER-BRONZE
+                                )
+                            )
+                        )
+                    ))
+                )
+            (ok TIER-BRONZE) ;; Default to Bronze for new users
+        )
+    )
+)
+
+;; Read-only: Get Tier Multiplier
+(define-read-only (get-tier-multiplier (tier uint))
+    (if (is-eq tier TIER-DIAMOND) TIER-DIAMOND-MULTIPLIER
+        (if (is-eq tier TIER-PLATINUM) TIER-PLATINUM-MULTIPLIER
+            (if (is-eq tier TIER-GOLD) TIER-GOLD-MULTIPLIER
+                (if (is-eq tier TIER-SILVER) TIER-SILVER-MULTIPLIER
+                    TIER-BRONZE-MULTIPLIER
+                )
+            )
+        )
+    )
+)
+
+;; Private: Check and Update Tier
+(define-private (check-and-update-tier (user principal) (new-points uint))
+    (let (
+        (old-tier (default-to TIER-BRONZE (map-get? UserTiers user)))
+        (new-tier (unwrap-panic (get-user-tier user)))
+    )
+        (if (> new-tier old-tier)
+            (begin
+                (map-set UserTiers user new-tier)
+                (map-set TierUpgradeEvents 
+                    { user: user, tier: new-tier }
+                    { upgraded-at-block: burn-block-height, points-at-upgrade: new-points }
+                )
+                (print { event: "tier-upgrade", user: user, old-tier: old-tier, new-tier: new-tier, points: new-points })
+                true
+            )
+            true
+        )
+    )
+)
+
+;; Read-only: Get Tier Upgrade History
+(define-read-only (get-tier-upgrade-event (user principal) (tier uint))
+    (map-get? TierUpgradeEvents { user: user, tier: tier })
 )
