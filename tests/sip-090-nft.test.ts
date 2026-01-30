@@ -494,3 +494,70 @@ describe("SIP-090 NFT Contract", () => {
       );
     });
   });
+  describe("Batch Operations", () => {
+    it("should batch mint multiple NFTs", () => {
+      const recipients = [wallet1, wallet2, wallet3];
+      const metadataUris = [
+        Cl.some(Cl.stringAscii("uri1")),
+        Cl.some(Cl.stringAscii("uri2")),
+        Cl.none()
+      ];
+
+      const batchMintResult = simnet.callPublicFn(
+        contractName,
+        "batch-mint",
+        [
+          Cl.list(recipients.map(w => Cl.principal(w))),
+          Cl.list(metadataUris)
+        ],
+        deployer
+      );
+
+      expect(batchMintResult.result).toBeOk(
+        Cl.list([Cl.uint(1), Cl.uint(2), Cl.uint(3)])
+      );
+
+      // Verify total supply
+      const totalSupply = simnet.callReadOnlyFn(
+        contractName,
+        "get-total-supply",
+        [],
+        deployer
+      );
+      expect(totalSupply.result).toBeOk(Cl.uint(3));
+    });
+
+    it("should reject batch mint with mismatched arrays", () => {
+      const recipients = [wallet1, wallet2];
+      const metadataUris = [Cl.some(Cl.stringAscii("uri1"))]; // Different length
+
+      const batchMintResult = simnet.callPublicFn(
+        contractName,
+        "batch-mint",
+        [
+          Cl.list(recipients.map(w => Cl.principal(w))),
+          Cl.list(metadataUris)
+        ],
+        deployer
+      );
+
+      expect(batchMintResult.result).toBeErr(Cl.uint(400)); // ERR-INVALID-PARAMETERS
+    });
+
+    it("should reject batch mint from non-owner", () => {
+      const recipients = [wallet1];
+      const metadataUris = [Cl.none()];
+
+      const batchMintResult = simnet.callPublicFn(
+        contractName,
+        "batch-mint",
+        [
+          Cl.list(recipients.map(w => Cl.principal(w))),
+          Cl.list(metadataUris)
+        ],
+        wallet1
+      );
+
+      expect(batchMintResult.result).toBeErr(Cl.uint(401)); // ERR-NOT-AUTHORIZED
+    });
+  });
