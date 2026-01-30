@@ -269,3 +269,44 @@
   (match (map-get? token-owners token-id)
     owner (ok (is-eq owner principal-to-check))
     (ok false)))
+;; ============================================================================
+;; PAUSE/UNPAUSE FUNCTIONALITY
+;; ============================================================================
+
+;; Pause the contract (owner only)
+(define-public (pause-contract)
+  (begin
+    (try! (validate-admin-authorization))
+    (var-set contract-paused true)
+    (print {
+      type: "contract_paused",
+      paused-by: tx-sender,
+      timestamp: burn-block-height
+    })
+    (ok true)))
+
+;; Unpause the contract (owner only)
+(define-public (unpause-contract)
+  (begin
+    (try! (validate-admin-authorization))
+    (var-set contract-paused false)
+    (print {
+      type: "contract_unpaused",
+      unpaused-by: tx-sender,
+      timestamp: burn-block-height
+    })
+    (ok true)))
+
+;; Check if contract is paused
+(define-read-only (is-paused)
+  (ok (var-get contract-paused)))
+
+;; Get contract status
+(define-read-only (get-contract-status)
+  (ok {
+    paused: (var-get contract-paused),
+    owner: CONTRACT-OWNER,
+    total-supply: (var-get total-supply),
+    max-supply: MAX-SUPPLY,
+    next-token-id: (var-get next-token-id)
+  }))
