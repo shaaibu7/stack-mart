@@ -616,3 +616,95 @@ describe("SIP-090 NFT Contract", () => {
       expect(lastTokenId.result).toBeOk(Cl.uint(5));
     });
   });
+  describe("Enhanced Transfer Functions", () => {
+    beforeEach(() => {
+      simnet.callPublicFn(
+        contractName,
+        "mint",
+        [Cl.principal(wallet1), Cl.none()],
+        deployer
+      );
+    });
+
+    it("should work with enhanced transfer function", () => {
+      const transferResult = simnet.callPublicFn(
+        contractName,
+        "transfer-enhanced",
+        [Cl.uint(1), Cl.principal(wallet1), Cl.principal(wallet2)],
+        wallet1
+      );
+
+      expect(transferResult.result).toBeOk(Cl.bool(true));
+
+      // Verify ownership changed
+      const newOwner = simnet.callReadOnlyFn(
+        contractName,
+        "get-owner",
+        [Cl.uint(1)],
+        deployer
+      );
+      expect(newOwner.result).toBeOk(Cl.some(Cl.principal(wallet2)));
+    });
+
+    it("should work with secure transfer function", () => {
+      const transferResult = simnet.callPublicFn(
+        contractName,
+        "transfer-secure",
+        [Cl.uint(1), Cl.principal(wallet1), Cl.principal(wallet2)],
+        wallet1
+      );
+
+      expect(transferResult.result).toBeOk(Cl.bool(true));
+
+      // Verify ownership changed
+      const newOwner = simnet.callReadOnlyFn(
+        contractName,
+        "get-owner",
+        [Cl.uint(1)],
+        deployer
+      );
+      expect(newOwner.result).toBeOk(Cl.some(Cl.principal(wallet2)));
+    });
+  });
+
+  describe("Optimized Functions", () => {
+    it("should work with optimized mint function", () => {
+      const mintResult = simnet.callPublicFn(
+        contractName,
+        "mint-optimized",
+        [Cl.principal(wallet1), Cl.none()],
+        deployer
+      );
+
+      expect(mintResult.result).toBeOk(Cl.uint(1));
+
+      // Verify token was minted correctly
+      const owner = simnet.callReadOnlyFn(
+        contractName,
+        "get-owner",
+        [Cl.uint(1)],
+        deployer
+      );
+      expect(owner.result).toBeOk(Cl.some(Cl.principal(wallet1)));
+    });
+
+    it("should work with secure mint function", () => {
+      const mintResult = simnet.callPublicFn(
+        contractName,
+        "mint-secure",
+        [Cl.principal(wallet1), Cl.none()],
+        deployer
+      );
+
+      expect(mintResult.result).toBeOk(Cl.uint(1));
+
+      // Verify token was minted correctly
+      const owner = simnet.callReadOnlyFn(
+        contractName,
+        "get-owner",
+        [Cl.uint(1)],
+        deployer
+      );
+      expect(owner.result).toBeOk(Cl.some(Cl.principal(wallet1)));
+    });
+  });
