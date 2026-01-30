@@ -370,3 +370,127 @@ describe("SIP-090 NFT Contract", () => {
       expect(tokenUri.result).toBeOk(Cl.some(Cl.stringAscii(customUri)));
     });
   });
+  describe("Query Functions", () => {
+    beforeEach(() => {
+      // Mint some tokens for testing
+      simnet.callPublicFn(
+        contractName,
+        "mint",
+        [Cl.principal(wallet1), Cl.none()],
+        deployer
+      );
+      simnet.callPublicFn(
+        contractName,
+        "mint",
+        [Cl.principal(wallet1), Cl.none()],
+        deployer
+      );
+      simnet.callPublicFn(
+        contractName,
+        "mint",
+        [Cl.principal(wallet2), Cl.none()],
+        deployer
+      );
+    });
+
+    it("should return correct tokens by owner", () => {
+      const wallet1Tokens = simnet.callReadOnlyFn(
+        contractName,
+        "get-tokens-by-owner",
+        [Cl.principal(wallet1)],
+        deployer
+      );
+
+      expect(wallet1Tokens.result).toBeOk(
+        Cl.list([Cl.uint(1), Cl.uint(2)])
+      );
+
+      const wallet2Tokens = simnet.callReadOnlyFn(
+        contractName,
+        "get-tokens-by-owner",
+        [Cl.principal(wallet2)],
+        deployer
+      );
+
+      expect(wallet2Tokens.result).toBeOk(
+        Cl.list([Cl.uint(3)])
+      );
+    });
+
+    it("should return correct token count by owner", () => {
+      const wallet1Count = simnet.callReadOnlyFn(
+        contractName,
+        "get-token-count-by-owner",
+        [Cl.principal(wallet1)],
+        deployer
+      );
+
+      expect(wallet1Count.result).toBeOk(Cl.uint(2));
+
+      const wallet2Count = simnet.callReadOnlyFn(
+        contractName,
+        "get-token-count-by-owner",
+        [Cl.principal(wallet2)],
+        deployer
+      );
+
+      expect(wallet2Count.result).toBeOk(Cl.uint(1));
+    });
+
+    it("should correctly identify token ownership", () => {
+      const isOwner1 = simnet.callReadOnlyFn(
+        contractName,
+        "is-token-owner",
+        [Cl.uint(1), Cl.principal(wallet1)],
+        deployer
+      );
+
+      expect(isOwner1.result).toBeOk(Cl.bool(true));
+
+      const isOwner2 = simnet.callReadOnlyFn(
+        contractName,
+        "is-token-owner",
+        [Cl.uint(1), Cl.principal(wallet2)],
+        deployer
+      );
+
+      expect(isOwner2.result).toBeOk(Cl.bool(false));
+    });
+
+    it("should check token existence correctly", () => {
+      const exists1 = simnet.callReadOnlyFn(
+        contractName,
+        "token-exists",
+        [Cl.uint(1)],
+        deployer
+      );
+
+      expect(exists1.result).toBeOk(Cl.bool(true));
+
+      const exists999 = simnet.callReadOnlyFn(
+        contractName,
+        "token-exists",
+        [Cl.uint(999)],
+        deployer
+      );
+
+      expect(exists999.result).toBeOk(Cl.bool(false));
+    });
+
+    it("should return complete token info", () => {
+      const tokenInfo = simnet.callReadOnlyFn(
+        contractName,
+        "get-token-info",
+        [Cl.uint(1)],
+        deployer
+      );
+
+      expect(tokenInfo.result).toBeOk(
+        Cl.tuple({
+          "token-id": Cl.uint(1),
+          owner: Cl.principal(wallet1),
+          "metadata-uri": Cl.some(Cl.stringAscii("https://api.stackmart.io/nft/1"))
+        })
+      );
+    });
+  });
