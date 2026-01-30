@@ -357,3 +357,58 @@
 ;; We need data variables for the zip operation
 (define-data-var recipients-list (list 50 principal) (list))
 (define-data-var uris-list (list 50 (optional (string-ascii 256))) (list))
+;; ============================================================================
+;; ADDITIONAL QUERY FUNCTIONS
+;; ============================================================================
+
+;; Get token count owned by a principal
+(define-read-only (get-token-count-by-owner (owner principal))
+  (ok (len (default-to (list) (map-get? owner-tokens owner)))))
+
+;; Check if token exists
+(define-read-only (token-exists (token-id uint))
+  (ok (is-some (map-get? token-owners token-id))))
+
+;; Get all contract metadata in one call
+(define-read-only (get-all-metadata)
+  (ok {
+    name: CONTRACT-NAME,
+    symbol: CONTRACT-SYMBOL,
+    base-uri: (var-get base-uri),
+    total-supply: (var-get total-supply),
+    max-supply: MAX-SUPPLY,
+    next-token-id: (var-get next-token-id),
+    paused: (var-get contract-paused),
+    owner: CONTRACT-OWNER
+  }))
+
+;; Get token info (owner + URI)
+(define-read-only (get-token-info (token-id uint))
+  (match (map-get? token-owners token-id)
+    owner (ok {
+      token-id: token-id,
+      owner: owner,
+      metadata-uri: (match (map-get? token-uris token-id)
+        uri (some uri)
+        (some (concat (var-get base-uri) (uint-to-ascii token-id))))
+    })
+    ERR-NOT-FOUND))
+
+;; Get multiple token info at once
+(define-read-only (get-tokens-info (token-ids (list 20 uint)))
+  (ok (map get-single-token-info token-ids)))
+
+(define-private (get-single-token-info (token-id uint))
+  (match (map-get? token-owners token-id)
+    owner {
+      token-id: token-id,
+      owner: (some owner),
+      metadata-uri: (match (map-get? token-uris token-id)
+        uri (some uri)
+        (some (concat (var-get base-uri) (uint-to-ascii token-id))))
+    }
+    {
+      token-id: token-id,
+      owner: none,
+      metadata-uri: none
+    }))
