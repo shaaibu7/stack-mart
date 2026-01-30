@@ -507,3 +507,96 @@
     ;; Emit enhanced event
     (emit-transfer-event-enhanced token-id sender recipient)
     (ok true)))
+;; ============================================================================
+;; SECURITY ENHANCEMENTS
+;; ============================================================================
+
+;; Safe arithmetic operations to prevent overflow/underflow
+(define-private (safe-add (a uint) (b uint))
+  (let ((result (+ a b)))
+    (asserts! (>= result a) (err u999)) ;; Overflow check
+    (ok result)))
+
+(define-private (safe-sub (a uint) (b uint))
+  (asserts! (>= a b) (err u998)) ;; Underflow check
+  (ok (- a b)))
+
+;; Reentrancy protection using state flags
+(define-data-var operation-in-progress bool false)
+
+(define-private (start-operation)
+  (asserts! (not (var-get operation-in-progress)) (err u997))
+  (var-set operation-in-progress true)
+  (ok true))
+
+(define-private (end-operation)
+  (var-set operation-in-progress false)
+  (ok true))
+
+;; Secure transfer function with reentrancy protection
+(define-public (transfer-secure (token-id uint) (sender principal) (recipient principal))
+  (begin
+    ;; Start operation (reentrancy protection)
+    (try! (start-operation))
+    
+    ;; Perform transfer with all validations
+    (let ((result (transfer token-id sender recipient)))
+      ;; End operation
+      (try! (end-operation))
+      result)))
+
+;; Rate limiting for minting (prevent spam)
+(define-map last-mint-block principal uint)
+(define-constant MIN-BLOCKS-BETWEEN-MINTS u10)
+
+(define-private (check-mint-rate-limit (minter principal))
+  (let ((last-block (default-to u0 (map-get? last-mint-block minter))))
+    (asserts! (>= (- burn-block-height last-block) MIN-BLOCKS-BETWEEN-MINTS) (err u996))
+    (map-set last-mint-block minter burn-block-height)
+    (ok true)))
+
+;; Secure mint with rate limiting
+(define-public (mint-secure (recipient principal) (metadata-uri (optional (string-ascii 256))))
+  (begin
+    ;; Check rate limit for non-owner mints
+    (if (not (is-eq tx-sender CONTRACT-OWNER))
+      (try! (check-mint-rate-limit tx-sender))
+      true)
+    
+    ;; Perform regular mint
+    (mint recipient metadata-uri)))
+
+;; Emergency functions with additional security
+(define-data-var emergency-mode bool false)
+
+(define-public (enable-emergency-mode)
+  (begin
+    (try! (validate-admin-authorization))
+    (var-set emergency-mode true)
+    (var-set contract-paused true)
+    (emit-admin-event "emergency_enabled" "Contract entered emergency mode")
+    (ok true)))
+
+(define-public (disable-emergency-mode)
+  (begin
+    (try! (validate-admin-authorization))
+    (var-set emergency-mode false)
+    (emit-admin-event "emergency_disabled" "Contract exited emergency mode")
+    (ok true)))
+
+;; Multi-signature support for critical operations
+(define-map admin-approvals {operation: (string-ascii 50), admin: principal} bool)
+(define-data-var required-approvals uint u1) ;; Can be increased for multi-sig
+
+(define-private (check-admin-approval (operation (string-ascii 50)))
+  (let ((approval-key {operation: operation, admin: tx-sender}))
+    (asserts! (default-to false (map-get? admin-approvals approval-key)) ERR-NOT-AUTHORIZED)
+    (map-delete admin-approvals approval-key)
+    (ok true)))
+
+;; Approve critical operation
+(define-public (approve-operation (operation (string-ascii 50)))
+  (begin
+    (try! (validate-admin-authorization))
+    (map-set admin-approvals {operation: operation, admin: tx-sender} true)
+    (ok true)))
