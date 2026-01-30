@@ -173,3 +173,81 @@ describe("SIP-090 NFT Contract", () => {
       expect(mintResult.result).toBeErr(Cl.uint(503)); // ERR-CONTRACT-PAUSED
     });
   });
+  describe("Transfer Functionality", () => {
+    beforeEach(() => {
+      // Mint a token for testing transfers
+      simnet.callPublicFn(
+        contractName,
+        "mint",
+        [Cl.principal(wallet1), Cl.none()],
+        deployer
+      );
+    });
+
+    it("should allow owner to transfer NFT", () => {
+      const transferResult = simnet.callPublicFn(
+        contractName,
+        "transfer",
+        [Cl.uint(1), Cl.principal(wallet1), Cl.principal(wallet2)],
+        wallet1
+      );
+
+      expect(transferResult.result).toBeOk(Cl.bool(true));
+
+      // Verify new owner
+      const newOwner = simnet.callReadOnlyFn(
+        contractName,
+        "get-owner",
+        [Cl.uint(1)],
+        deployer
+      );
+      expect(newOwner.result).toBeOk(Cl.some(Cl.principal(wallet2)));
+    });
+
+    it("should reject transfer from non-owner", () => {
+      const transferResult = simnet.callPublicFn(
+        contractName,
+        "transfer",
+        [Cl.uint(1), Cl.principal(wallet1), Cl.principal(wallet2)],
+        wallet2
+      );
+
+      expect(transferResult.result).toBeErr(Cl.uint(401)); // ERR-NOT-AUTHORIZED
+    });
+
+    it("should reject transfer of non-existent token", () => {
+      const transferResult = simnet.callPublicFn(
+        contractName,
+        "transfer",
+        [Cl.uint(999), Cl.principal(wallet1), Cl.principal(wallet2)],
+        wallet1
+      );
+
+      expect(transferResult.result).toBeErr(Cl.uint(404)); // ERR-NOT-FOUND
+    });
+
+    it("should reject transfer to same address", () => {
+      const transferResult = simnet.callPublicFn(
+        contractName,
+        "transfer",
+        [Cl.uint(1), Cl.principal(wallet1), Cl.principal(wallet1)],
+        wallet1
+      );
+
+      expect(transferResult.result).toBeErr(Cl.uint(400)); // ERR-INVALID-PARAMETERS
+    });
+
+    it("should reject transfer when contract is paused", () => {
+      // Pause contract
+      simnet.callPublicFn(contractName, "pause-contract", [], deployer);
+
+      const transferResult = simnet.callPublicFn(
+        contractName,
+        "transfer",
+        [Cl.uint(1), Cl.principal(wallet1), Cl.principal(wallet2)],
+        wallet1
+      );
+
+      expect(transferResult.result).toBeErr(Cl.uint(503)); // ERR-CONTRACT-PAUSED
+    });
+  });
