@@ -872,3 +872,50 @@
         (ok true)
     )
 )
+
+;; ============================================================================
+;; DYNAMIC MULTIPLIERS
+;; ============================================================================
+
+;; Map to store base multipliers for different activity types
+(define-map ActivityMultipliers (string-ascii 20) uint)
+
+;; Admin: Set multiplier for a specific activity
+(define-public (set-activity-multiplier (activity (string-ascii 20)) (multiplier uint))
+    (begin
+        (asserts! (is-admin tx-sender) ERR-NOT-AUTHORIZED)
+        (asserts! (> multiplier u0) ERR-INVALID-POINTS)
+        (map-set ActivityMultipliers activity multiplier)
+        (print { event: "multiplier-updated", activity: activity, new-multiplier: multiplier })
+        (ok true)
+    )
+)
+
+;; Read-only: Get Multiplier for activity
+(define-read-only (get-activity-multiplier (activity (string-ascii 20)))
+    (default-to u100 (map-get? ActivityMultipliers activity))
+)
+
+;; Internal: Calculate Effective Multiplier (Tier + Streak + Base)
+(define-private (calculate-effective-multiplier (user principal) (activity (string-ascii 20)))
+    (let (
+        (tier (unwrap-panic (get-user-tier user)))
+        (tier-mult (get-tier-multiplier tier))
+        (streak-mult (calculate-multiplier user))
+        (activity-mult (get-activity-multiplier activity))
+    )
+        ;; Result: (TierMult/100 * StreakMult * ActivityMult/100)
+        ;; We use basis points to preserve precision
+        (/ (* (* tier-mult activity-mult) streak-mult) u100)
+    )
+)
+
+;; Admin: Global Points Cap
+(define-data-var global-multiplier-cap uint u500) ;; max 5x effective multiplier
+
+(define-public (set-multiplier-cap (new-cap uint))
+    (begin
+        (asserts! (is-admin tx-sender) ERR-NOT-AUTHORIZED)
+        (ok (var-set global-multiplier-cap new-cap))
+    )
+)
