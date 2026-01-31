@@ -2314,3 +2314,139 @@
 (define-read-only (get-achievement-category (category-id uint))
     (map-get? AchievementCategories category-id)
 )
+;; ============================================================================
+;; ENHANCED SECURITY AND VALIDATION
+;; ============================================================================
+
+;; Rate Limiting
+(define-map UserRateLimits
+    principal
+    {
+        last-action-block: uint,
+        action-count: uint,
+        cooldown-until: uint
+    }
+)
+
+;; Security Constants
+(define-constant MAX-ACTIONS-PER-PERIOD u10)
+(define-constant RATE-LIMIT-PERIOD u100) ;; blocks
+(define-constant COOLDOWN-PENALTY u500) ;; blocks
+
+;; Input Validation
+(define-private (validate-string-input (input (string-ascii 50)))
+    (and (> (len input) u0) (<= (len input) u50))
+)
+
+;; Rate Limiting Check
+(define-private (check-rate-limit (user principal))
+    (let (
+        (rate-data (default-to 
+            {
+                last-action-block: u0,
+                action-count: u0,
+                cooldown-until: u0
+            }
+            (map-get? UserRateLimits user)
+        ))
+        (current-block burn-block-height)
+    )
+        ;; Check if in cooldown
+        (asserts! (< current-block (get cooldown-until rate-data)) (ok false))
+        
+        ;; Reset counter if period expired
+        (let (
+            (blocks-since-last (- current-block (get last-action-block rate-data)))
+            (reset-counter (> blocks-since-last RATE-LIMIT-PERIOD))
+            (new-count (if reset-counter u1 (+ (get action-count rate-data) u1)))
+        )
+            ;; Check if exceeding rate limit
+            (if (> new-count MAX-ACTIONS-PER-PERIOD)
+                (begin
+                    ;; Apply cooldown penalty
+                    (map-set UserRateLimits user
+                        (merge rate-data { 
+                            cooldown-until: (+ current-block COOLDOWN-PENALTY),
+                            action-count: u0
+                        })
+                    )
+                    (ok false)
+                )
+                (begin
+                    ;; Update rate limit data
+                    (map-set UserRateLimits user
+                        {
+                            last-action-block: current-block,
+                            action-count: new-count,
+                            cooldown-until: (get cooldown-until rate-data)
+                        }
+                    )
+                    (ok true)
+                )
+            )
+        )
+    )
+)
+
+;; Enhanced Input Validation
+(define-private (validate-points-input (points uint))
+    (and (> points u0) (<= points u1000000)) ;; Max 1M points per action
+)
+
+;; Overflow Protection Helper
+(define-private (safe-add (a uint) (b uint))
+    (let ((result (+ a b)))
+        (asserts! (>= result a) ERR-BUFFER-OVERFLOW) ;; Check for overflow
+        (ok result)
+    )
+)
+
+;; Enhanced Authorization Check
+(define-private (enhanced-auth-check (required-role uint))
+    (let ((is-authorized (or (is-admin tx-sender) (is-eq required-role u0))))
+        (asserts! is-authorized ERR-NOT-AUTHORIZED)
+        (ok true)
+    )
+)
+
+;; Public: Secure Activity Logging
+(define-public (secure-log-activity 
+    (user principal)
+    (activity-type (string-ascii 20))
+    (points uint))
+    (begin
+        ;; Rate limiting
+        (asserts! (unwrap! (check-rate-limit tx-sender) ERR-COOLDOWN-ACTIVE) ERR-COOLDOWN-ACTIVE)
+        
+        ;; Input validation
+        (asserts! (validate-string-input activity-type) ERR-INVALID-POINTS)
+        (asserts! (validate-points-input points) ERR-INVALID-POINTS)
+        
+        ;; Contract not paused
+        (asserts! (not (var-get contract-paused)) ERR-CONTRACT-PAUSED)
+        
+        ;; Log the activity
+        (log-contract-activity user (/ points u10))
+    )
+)
+
+;; Admin: Security Audit Log
+(define-public (log-security-event 
+    (event-type (string-ascii 30))
+    (severity uint)
+    (description (string-ascii 100)))
+    (begin
+        (asserts! (is-admin tx-sender) ERR-NOT-AUTHORIZED)
+        (asserts! (<= severity u3) ERR-INVALID-POINTS) ;; 0=info, 1=warning, 2=error, 3=critical
+        
+        (print { 
+            event: "security-audit",
+            type: event-type,
+            severity: severity,
+            description: description,
+            admin: tx-sender,
+            timestamp: burn-block-height
+        })
+        (ok true)
+    )
+)
