@@ -1378,3 +1378,168 @@
         )
     )
 )
+;; ============================================================================
+;; ADVANCED ANALYTICS SYSTEM
+;; ============================================================================
+
+;; Analytics Data Storage
+(define-map UserEngagementMetrics
+    principal
+    {
+        total-sessions: uint,
+        avg-session-length: uint,
+        last-session-block: uint,
+        retention-score: uint,
+        engagement-trend: uint ;; 0=declining, 1=stable, 2=growing
+    }
+)
+
+(define-map SystemHealthMetrics
+    uint ;; metric-type: 0=daily, 1=weekly, 2=monthly
+    {
+        active-users: uint,
+        total-activities: uint,
+        points-distributed: uint,
+        avg-user-points: uint,
+        timestamp: uint
+    }
+)
+
+(define-map PerformanceTrends
+    { user: principal, period: uint }
+    {
+        points-earned: uint,
+        activities-completed: uint,
+        rank-change: int,
+        period-start: uint,
+        period-end: uint
+    }
+)
+
+(define-data-var analytics-enabled bool true)
+
+;; Public: Update User Engagement
+(define-public (update-user-engagement (user principal) (session-length uint))
+    (begin
+        (asserts! (var-get analytics-enabled) (ok false))
+        
+        (let (
+            (current-metrics (default-to 
+                {
+                    total-sessions: u0,
+                    avg-session-length: u0,
+                    last-session-block: u0,
+                    retention-score: u100,
+                    engagement-trend: u1
+                }
+                (map-get? UserEngagementMetrics user)
+            ))
+            (new-sessions (+ (get total-sessions current-metrics) u1))
+            (new-avg (/ (+ (* (get avg-session-length current-metrics) (get total-sessions current-metrics)) session-length) new-sessions))
+        )
+            (map-set UserEngagementMetrics user
+                (merge current-metrics {
+                    total-sessions: new-sessions,
+                    avg-session-length: new-avg,
+                    last-session-block: burn-block-height
+                })
+            )
+            (ok true)
+        )
+    )
+)
+
+;; Admin: Record System Health Metrics
+(define-public (record-system-health 
+    (metric-type uint)
+    (active-users uint)
+    (total-activities uint)
+    (points-distributed uint))
+    (begin
+        (asserts! (is-admin tx-sender) ERR-NOT-AUTHORIZED)
+        (asserts! (<= metric-type u2) ERR-INVALID-POINTS)
+        
+        (let ((avg-points (if (> active-users u0) (/ points-distributed active-users) u0)))
+            (map-set SystemHealthMetrics metric-type
+                {
+                    active-users: active-users,
+                    total-activities: total-activities,
+                    points-distributed: points-distributed,
+                    avg-user-points: avg-points,
+                    timestamp: burn-block-height
+                }
+            )
+            (print { event: "system-health-recorded", metric-type: metric-type, active-users: active-users })
+            (ok true)
+        )
+    )
+)
+
+;; Public: Record Performance Trend
+(define-public (record-performance-trend 
+    (user principal)
+    (period uint)
+    (points-earned uint)
+    (activities-completed uint)
+    (rank-change int))
+    (begin
+        (map-set PerformanceTrends { user: user, period: period }
+            {
+                points-earned: points-earned,
+                activities-completed: activities-completed,
+                rank-change: rank-change,
+                period-start: (- burn-block-height u1000), ;; Approximate period start
+                period-end: burn-block-height
+            }
+        )
+        (ok true)
+    )
+)
+
+;; Read-only: Get User Engagement Metrics
+(define-read-only (get-user-engagement (user principal))
+    (map-get? UserEngagementMetrics user)
+)
+
+;; Read-only: Get System Health
+(define-read-only (get-system-health (metric-type uint))
+    (map-get? SystemHealthMetrics metric-type)
+)
+
+;; Read-only: Get Performance Trend
+(define-read-only (get-performance-trend (user principal) (period uint))
+    (map-get? PerformanceTrends { user: user, period: period })
+)
+
+;; Read-only: Calculate Retention Rate
+(define-read-only (calculate-retention-rate (user principal))
+    (let (
+        (metrics (map-get? UserEngagementMetrics user))
+        (user-stats (get-user-stats user))
+    )
+        (match metrics
+            user-metrics 
+                (let (
+                    (days-since-last (/ (- burn-block-height (get last-session-block user-metrics)) BLOCKS-PER-DAY))
+                    (total-sessions (get total-sessions user-metrics))
+                )
+                    (ok (if (< days-since-last u7) u100 ;; Active within week = 100%
+                        (if (< days-since-last u30) u75 ;; Active within month = 75%
+                            (if (> total-sessions u10) u50 ;; Has history = 50%
+                                u25 ;; Low retention = 25%
+                            )
+                        )
+                    ))
+                )
+            (ok u0) ;; No metrics = 0%
+        )
+    )
+)
+
+;; Admin: Toggle Analytics
+(define-public (toggle-analytics (enabled bool))
+    (begin
+        (asserts! (is-admin tx-sender) ERR-NOT-AUTHORIZED)
+        (ok (var-set analytics-enabled enabled))
+    )
+)
