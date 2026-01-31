@@ -1955,3 +1955,189 @@
 (define-read-only (get-pool-stats (pool-id uint))
     (map-get? PoolStats pool-id)
 )
+;; ============================================================================
+;; ENHANCED API AND DATA EXPORT
+;; ============================================================================
+
+;; Pagination Support
+(define-map PaginatedQueries
+    { query-type: uint, offset: uint, limit: uint }
+    {
+        results: (list 50 principal),
+        total-count: uint,
+        has-more: bool
+    }
+)
+
+;; Query Type Constants
+(define-constant QUERY-TYPE-LEADERBOARD u0)
+(define-constant QUERY-TYPE-GUILD-MEMBERS u1)
+(define-constant QUERY-TYPE-SEASON-PARTICIPANTS u2)
+
+;; Enhanced Event Emission
+(define-map EventLog
+    uint ;; event-id
+    {
+        event-type: (string-ascii 30),
+        user: (optional principal),
+        data: (string-ascii 200),
+        timestamp: uint
+    }
+)
+
+(define-data-var next-event-id uint u1)
+
+;; Public: Export User Data
+(define-public (export-user-data (user principal))
+    (let (
+        (user-stats (get-user-stats user))
+        (user-tier (unwrap-panic (get-user-tier user)))
+        (user-streak (get-user-streak user))
+        (user-guild (get-user-guild user))
+        (engagement-metrics (get-user-engagement user))
+    )
+        (print {
+            event: "user-data-export",
+            user: user,
+            stats: user-stats,
+            tier: user-tier,
+            streak: user-streak,
+            guild: user-guild,
+            engagement: engagement-metrics,
+            export-timestamp: burn-block-height
+        })
+        (ok true)
+    )
+)
+
+;; Read-only: Get Paginated Leaderboard
+(define-read-only (get-paginated-leaderboard (offset uint) (limit uint))
+    (let (
+        (capped-limit (if (> limit u50) u50 limit))
+        (global-stats (get-global-stats))
+    )
+        (ok {
+            offset: offset,
+            limit: capped-limit,
+            total-users: (get total-users global-stats),
+            has-more: (> (get total-users global-stats) (+ offset capped-limit)),
+            note: "Full leaderboard requires off-chain indexing"
+        })
+    )
+)
+
+;; Read-only: Get User Activity Summary
+(define-read-only (get-user-activity-summary (user principal))
+    (let (
+        (stats (get-user-stats user))
+        (log-count (get-user-log-count user))
+        (cross-contract-count (default-to u0 (map-get? UserCrossContractCount user)))
+        (guild-info (get-user-guild user))
+    )
+        (match stats
+            user-stats (ok {
+                total-points: (get total-points user-stats),
+                contract-points: (get contract-impact-points user-stats),
+                library-points: (get library-usage-points user-stats),
+                github-points: (get github-contrib-points user-stats),
+                reputation: (get reputation-score user-stats),
+                activity-count: log-count,
+                cross-contract-activities: cross-contract-count,
+                guild-membership: guild-info,
+                last-activity: (get last-activity-block user-stats)
+            })
+            (err ERR-USER-NOT-FOUND)
+        )
+    )
+)
+
+;; Read-only: Get System Overview
+(define-read-only (get-system-overview)
+    (let (
+        (global-stats (get-global-stats))
+        (current-season (var-get current-season-id))
+        (total-guilds (var-get next-guild-id))
+        (total-pools (var-get next-pool-id))
+        (total-milestones (var-get next-milestone-id))
+    )
+        (ok {
+            total-users: (get total-users global-stats),
+            total-points-distributed: (get total-points-distributed global-stats),
+            top-score: (get top-score global-stats),
+            current-season: current-season,
+            total-guilds: total-guilds,
+            total-reward-pools: total-pools,
+            total-milestones: total-milestones,
+            contract-paused: (var-get contract-paused),
+            analytics-enabled: (var-get analytics-enabled)
+        })
+    )
+)
+
+;; Public: Log Custom Event
+(define-public (log-custom-event 
+    (event-type (string-ascii 30))
+    (user (optional principal))
+    (data (string-ascii 200)))
+    (let ((event-id (var-get next-event-id)))
+        (map-set EventLog event-id
+            {
+                event-type: event-type,
+                user: user,
+                data: data,
+                timestamp: burn-block-height
+            }
+        )
+        (var-set next-event-id (+ event-id u1))
+        (print { event: "custom-event-logged", event-id: event-id, type: event-type })
+        (ok event-id)
+    )
+)
+
+;; Read-only: Get Event Log Entry
+(define-read-only (get-event-log (event-id uint))
+    (map-get? EventLog event-id)
+)
+
+;; Read-only: Get Comprehensive User Profile
+(define-read-only (get-user-profile (user principal))
+    (let (
+        (basic-stats (get-user-stats user))
+        (tier (unwrap-panic (get-user-tier user)))
+        (level (unwrap-panic (get-user-level user)))
+        (reputation (unwrap-panic (get-user-reputation user)))
+        (streak (get-user-streak user))
+        (guild (get-user-guild user))
+        (engagement (get-user-engagement user))
+        (claimable (unwrap-panic (get-claimable-rewards user)))
+    )
+        (match basic-stats
+            stats (ok {
+                user: user,
+                points: (get total-points stats),
+                tier: tier,
+                level: level,
+                reputation: reputation,
+                streak: (get current-streak streak),
+                guild-id: guild,
+                engagement-score: (match engagement eng (get retention-score eng) u0),
+                claimable-rewards: claimable,
+                last-activity: (get last-activity-block stats)
+            })
+            (err ERR-USER-NOT-FOUND)
+        )
+    )
+)
+
+;; Read-only: Generate Mock Data for Testing
+(define-read-only (generate-mock-leaderboard)
+    (ok {
+        mock-users: (list 
+            "SP1HTBVD3JG9C05J7HBJTHGR0GGW7KXW28M5JS8QE"
+            "SP2JXKMSH007NPYAQHKJPQMAQYAD90NQGTVJVQ02B"
+            "SP3K8BC0PPEVCV7NZ6QSRWPQ2JE9E5B6N3PA0KBR9"
+        ),
+        mock-scores: (list u5000 u4500 u4000),
+        note: "Mock data for integration testing"
+    })
+)
