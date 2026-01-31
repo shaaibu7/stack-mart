@@ -1233,3 +1233,148 @@
 (define-read-only (get-guild-member-info (guild-id uint) (member principal))
     (map-get? GuildMembers { guild-id: guild-id, member: member })
 )
+;; ============================================================================
+;; CROSS-CONTRACT INTEGRATION
+;; ============================================================================
+
+;; Partner Contract Management
+(define-map PartnerContracts 
+    principal ;; contract-address
+    {
+        name: (string-ascii 30),
+        point-multiplier: uint,
+        active: bool,
+        registered-block: uint,
+        total-activities: uint
+    }
+)
+
+;; Activity Deduplication
+(define-map ActivityHashes 
+    (buff 32) ;; activity-hash
+    {
+        user: principal,
+        contract: principal,
+        processed-block: uint
+    }
+)
+
+;; Cross-Contract Activity Log
+(define-map CrossContractActivities
+    { user: principal, activity-id: uint }
+    {
+        contract: principal,
+        activity-type: (string-ascii 20),
+        points-earned: uint,
+        timestamp: uint,
+        hash: (buff 32)
+    }
+)
+
+(define-map UserCrossContractCount principal uint)
+
+;; Admin: Register Partner Contract
+(define-public (register-partner-contract 
+    (contract-address principal)
+    (name (string-ascii 30))
+    (point-multiplier uint))
+    (begin
+        (asserts! (is-admin tx-sender) ERR-NOT-AUTHORIZED)
+        (asserts! (> point-multiplier u0) ERR-INVALID-POINTS)
+        
+        (map-set PartnerContracts contract-address
+            {
+                name: name,
+                point-multiplier: point-multiplier,
+                active: true,
+                registered-block: burn-block-height,
+                total-activities: u0
+            }
+        )
+        
+        (print { event: "partner-registered", contract: contract-address, name: name, multiplier: point-multiplier })
+        (ok true)
+    )
+)
+
+;; Public: Log Cross-Contract Activity
+(define-public (log-cross-contract-activity 
+    (user principal)
+    (activity-type (string-ascii 20))
+    (base-points uint)
+    (activity-hash (buff 32)))
+    (let (
+        (partner-data (unwrap! (map-get? PartnerContracts contract-caller) ERR-NOT-AUTHORIZED))
+        (existing-hash (map-get? ActivityHashes activity-hash))
+    )
+        (asserts! (get active partner-data) ERR-CONTRACT-PAUSED)
+        ;; Prevent duplicate processing
+        (asserts! (is-none existing-hash) ERR-COOLDOWN-ACTIVE)
+        
+        (let (
+            (multiplier (get point-multiplier partner-data))
+            (final-points (/ (* base-points multiplier) u100))
+            (activity-count (default-to u0 (map-get? UserCrossContractCount user)))
+        )
+            ;; Record activity hash to prevent duplicates
+            (map-set ActivityHashes activity-hash
+                {
+                    user: user,
+                    contract: contract-caller,
+                    processed-block: burn-block-height
+                }
+            )
+            
+            ;; Log detailed activity
+            (map-set CrossContractActivities
+                { user: user, activity-id: activity-count }
+                {
+                    contract: contract-caller,
+                    activity-type: activity-type,
+                    points-earned: final-points,
+                    timestamp: burn-block-height,
+                    hash: activity-hash
+                }
+            )
+            
+            ;; Update counters
+            (map-set UserCrossContractCount user (+ activity-count u1))
+            (map-set PartnerContracts contract-caller
+                (merge partner-data { total-activities: (+ (get total-activities partner-data) u1) })
+            )
+            
+            ;; Add points to user's regular account
+            (unwrap! (log-contract-activity user (/ final-points u10)) ERR-BUFFER-OVERFLOW)
+            
+            (print { event: "cross-contract-activity", user: user, contract: contract-caller, points: final-points })
+            (ok final-points)
+        )
+    )
+)
+
+;; Read-only: Get Partner Contract Info
+(define-read-only (get-partner-contract (contract-address principal))
+    (map-get? PartnerContracts contract-address)
+)
+
+;; Read-only: Check Activity Hash
+(define-read-only (is-activity-processed (activity-hash (buff 32)))
+    (is-some (map-get? ActivityHashes activity-hash))
+)
+
+;; Read-only: Get Cross-Contract Activity
+(define-read-only (get-cross-contract-activity (user principal) (activity-id uint))
+    (map-get? CrossContractActivities { user: user, activity-id: activity-id })
+)
+
+;; Admin: Update Partner Status
+(define-public (update-partner-status (contract-address principal) (active bool))
+    (begin
+        (asserts! (is-admin tx-sender) ERR-NOT-AUTHORIZED)
+        (let ((partner-data (unwrap! (map-get? PartnerContracts contract-address) ERR-USER-NOT-FOUND)))
+            (map-set PartnerContracts contract-address (merge partner-data { active: active }))
+            (print { event: "partner-status-updated", contract: contract-address, active: active })
+            (ok true)
+        )
+    )
+)
