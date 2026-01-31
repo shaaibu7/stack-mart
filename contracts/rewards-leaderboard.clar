@@ -1543,3 +1543,184 @@
         (ok (var-set analytics-enabled enabled))
     )
 )
+;; ============================================================================
+;; MILESTONE TRACKING SYSTEM
+;; ============================================================================
+
+;; Milestone Definitions
+(define-map Milestones
+    uint ;; milestone-id
+    {
+        name: (string-ascii 50),
+        description: (string-ascii 100),
+        target-value: uint,
+        reward-points: uint,
+        prerequisite: (optional uint),
+        milestone-type: uint, ;; 0=points, 1=activities, 2=streak, 3=referrals
+        active: bool
+    }
+)
+
+;; User Milestone Progress
+(define-map UserMilestoneProgress
+    { user: principal, milestone-id: uint }
+    {
+        current-value: uint,
+        completed: bool,
+        completed-block: (optional uint),
+        reward-claimed: bool
+    }
+)
+
+(define-data-var next-milestone-id uint u1)
+
+;; Milestone Type Constants
+(define-constant MILESTONE-TYPE-POINTS u0)
+(define-constant MILESTONE-TYPE-ACTIVITIES u1)
+(define-constant MILESTONE-TYPE-STREAK u2)
+(define-constant MILESTONE-TYPE-REFERRALS u3)
+
+;; Admin: Create Milestone
+(define-public (create-milestone
+    (name (string-ascii 50))
+    (description (string-ascii 100))
+    (target-value uint)
+    (reward-points uint)
+    (milestone-type uint)
+    (prerequisite (optional uint)))
+    (begin
+        (asserts! (is-admin tx-sender) ERR-NOT-AUTHORIZED)
+        (asserts! (> target-value u0) ERR-INVALID-POINTS)
+        (asserts! (> reward-points u0) ERR-INVALID-POINTS)
+        (asserts! (<= milestone-type u3) ERR-INVALID-POINTS)
+        
+        ;; Validate prerequisite exists if provided
+        (match prerequisite
+            prereq-id (asserts! (is-some (map-get? Milestones prereq-id)) ERR-USER-NOT-FOUND)
+            true
+        )
+        
+        (let ((milestone-id (var-get next-milestone-id)))
+            (map-set Milestones milestone-id
+                {
+                    name: name,
+                    description: description,
+                    target-value: target-value,
+                    reward-points: reward-points,
+                    prerequisite: prerequisite,
+                    milestone-type: milestone-type,
+                    active: true
+                }
+            )
+            (var-set next-milestone-id (+ milestone-id u1))
+            (print { event: "milestone-created", milestone-id: milestone-id, name: name })
+            (ok milestone-id)
+        )
+    )
+)
+
+;; Public: Update Milestone Progress
+(define-public (update-milestone-progress (user principal) (milestone-id uint) (new-value uint))
+    (let (
+        (milestone-data (unwrap! (map-get? Milestones milestone-id) ERR-USER-NOT-FOUND))
+        (current-progress (default-to 
+            {
+                current-value: u0,
+                completed: false,
+                completed-block: none,
+                reward-claimed: false
+            }
+            (map-get? UserMilestoneProgress { user: user, milestone-id: milestone-id })
+        ))
+    )
+        (asserts! (get active milestone-data) ERR-CONTRACT-PAUSED)
+        (asserts! (not (get completed current-progress)) (ok true)) ;; Already completed
+        
+        ;; Check prerequisites
+        (match (get prerequisite milestone-data)
+            prereq-id 
+                (let ((prereq-progress (map-get? UserMilestoneProgress { user: user, milestone-id: prereq-id })))
+                    (asserts! (and (is-some prereq-progress) (get completed (unwrap-panic prereq-progress))) ERR-NOT-AUTHORIZED)
+                )
+            true
+        )
+        
+        (let (
+            (updated-value (max (get current-value current-progress) new-value))
+            (is-completed (>= updated-value (get target-value milestone-data)))
+        )
+            (map-set UserMilestoneProgress { user: user, milestone-id: milestone-id }
+                {
+                    current-value: updated-value,
+                    completed: is-completed,
+                    completed-block: (if is-completed (some burn-block-height) none),
+                    reward-claimed: false
+                }
+            )
+            
+            (if is-completed
+                (print { event: "milestone-completed", user: user, milestone-id: milestone-id })
+                (print { event: "milestone-progress", user: user, milestone-id: milestone-id, progress: updated-value })
+            )
+            (ok is-completed)
+        )
+    )
+)
+
+;; Public: Claim Milestone Reward
+(define-public (claim-milestone-reward (milestone-id uint))
+    (let (
+        (milestone-data (unwrap! (map-get? Milestones milestone-id) ERR-USER-NOT-FOUND))
+        (progress-data (unwrap! (map-get? UserMilestoneProgress { user: tx-sender, milestone-id: milestone-id }) ERR-USER-NOT-FOUND))
+    )
+        (asserts! (get completed progress-data) ERR-NOT-AUTHORIZED)
+        (asserts! (not (get reward-claimed progress-data)) ERR-COOLDOWN-ACTIVE)
+        
+        ;; Mark reward as claimed
+        (map-set UserMilestoneProgress { user: tx-sender, milestone-id: milestone-id }
+            (merge progress-data { reward-claimed: true })
+        )
+        
+        ;; Add to claimable rewards
+        (let ((current-claimable (default-to u0 (map-get? ClaimableRewards tx-sender))))
+            (map-set ClaimableRewards tx-sender (+ current-claimable (get reward-points milestone-data)))
+        )
+        
+        (print { event: "milestone-reward-claimed", user: tx-sender, milestone-id: milestone-id, reward: (get reward-points milestone-data) })
+        (ok (get reward-points milestone-data))
+    )
+)
+
+;; Read-only: Get Milestone Info
+(define-read-only (get-milestone-info (milestone-id uint))
+    (map-get? Milestones milestone-id)
+)
+
+;; Read-only: Get User Milestone Progress
+(define-read-only (get-user-milestone-progress (user principal) (milestone-id uint))
+    (map-get? UserMilestoneProgress { user: user, milestone-id: milestone-id })
+)
+
+;; Read-only: Check Milestone Eligibility
+(define-read-only (is-milestone-eligible (user principal) (milestone-id uint))
+    (let ((milestone-data (unwrap! (map-get? Milestones milestone-id) (err ERR-USER-NOT-FOUND))))
+        (match (get prerequisite milestone-data)
+            prereq-id 
+                (let ((prereq-progress (map-get? UserMilestoneProgress { user: user, milestone-id: prereq-id })))
+                    (ok (and (is-some prereq-progress) (get completed (unwrap-panic prereq-progress))))
+                )
+            (ok true)
+        )
+    )
+)
+
+;; Private: Auto-update milestones based on user stats
+(define-private (auto-update-milestones (user principal))
+    (let ((user-stats (unwrap! (get-user-stats user) false)))
+        ;; Update points-based milestones
+        (update-milestone-progress user u1 (get total-points user-stats)) ;; Assuming milestone 1 is points-based
+        ;; Update activity-based milestones  
+        (update-milestone-progress user u2 (+ (get contract-impact-points user-stats) (get library-usage-points user-stats))) ;; Assuming milestone 2 is activity-based
+        true
+    )
+)
