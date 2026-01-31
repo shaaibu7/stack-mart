@@ -2707,3 +2707,179 @@
         )
     )
 )
+;; ============================================================================
+;; REPUTATION AND TRUST SYSTEM
+;; ============================================================================
+
+;; Trust Scores
+(define-map UserTrustScores
+    principal
+    {
+        trust-score: uint,
+        verification-level: uint,
+        endorsements: uint,
+        reports: uint,
+        last-updated: uint
+    }
+)
+
+;; Endorsements
+(define-map UserEndorsements
+    { endorser: principal, endorsed: principal }
+    {
+        endorsement-type: uint,
+        message: (string-ascii 50),
+        timestamp: uint,
+        weight: uint
+    }
+)
+
+;; Trust Level Constants
+(define-constant TRUST-LEVEL-UNVERIFIED u0)
+(define-constant TRUST-LEVEL-BASIC u1)
+(define-constant TRUST-LEVEL-VERIFIED u2)
+(define-constant TRUST-LEVEL-TRUSTED u3)
+(define-constant TRUST-LEVEL-EXPERT u4)
+
+;; Endorsement Types
+(define-constant ENDORSEMENT-HELPFUL u0)
+(define-constant ENDORSEMENT-SKILLED u1)
+(define-constant ENDORSEMENT-TRUSTWORTHY u2)
+(define-constant ENDORSEMENT-LEADER u3)
+
+;; Public: Endorse User
+(define-public (endorse-user
+    (endorsed principal)
+    (endorsement-type uint)
+    (message (string-ascii 50)))
+    (begin
+        (asserts! (not (is-eq tx-sender endorsed)) ERR-INVALID-POINTS)
+        (asserts! (<= endorsement-type u3) ERR-INVALID-POINTS)
+        (asserts! (validate-string-input message) ERR-INVALID-POINTS)
+        
+        ;; Check if already endorsed
+        (asserts! (is-none (map-get? UserEndorsements { endorser: tx-sender, endorsed: endorsed })) ERR-COOLDOWN-ACTIVE)
+        
+        (let (
+            (endorser-stats (unwrap! (get-user-stats tx-sender) ERR-USER-NOT-FOUND))
+            (endorsement-weight (calculate-endorsement-weight (get total-points endorser-stats)))
+        )
+            ;; Record endorsement
+            (map-set UserEndorsements { endorser: tx-sender, endorsed: endorsed }
+                {
+                    endorsement-type: endorsement-type,
+                    message: message,
+                    timestamp: burn-block-height,
+                    weight: endorsement-weight
+                }
+            )
+            
+            ;; Update endorsed user's trust score
+            (update-trust-score endorsed endorsement-weight)
+            
+            (print { event: "user-endorsed", endorser: tx-sender, endorsed: endorsed, type: endorsement-type })
+            (ok true)
+        )
+    )
+)
+
+;; Private: Calculate Endorsement Weight
+(define-private (calculate-endorsement-weight (endorser-points uint))
+    (if (> endorser-points u100000) u5      ;; High-value users have more weight
+        (if (> endorser-points u10000) u3   ;; Medium-value users
+            (if (> endorser-points u1000) u2 ;; Low-value users
+                u1                          ;; New users
+            )
+        )
+    )
+)
+
+;; Private: Update Trust Score
+(define-private (update-trust-score (user principal) (weight uint))
+    (let (
+        (current-trust (default-to 
+            {
+                trust-score: u100,
+                verification-level: TRUST-LEVEL-UNVERIFIED,
+                endorsements: u0,
+                reports: u0,
+                last-updated: u0
+            }
+            (map-get? UserTrustScores user)
+        ))
+        (new-endorsements (+ (get endorsements current-trust) u1))
+        (new-trust-score (+ (get trust-score current-trust) (* weight u10)))
+        (new-verification-level (calculate-verification-level new-trust-score new-endorsements))
+    )
+        (map-set UserTrustScores user
+            {
+                trust-score: new-trust-score,
+                verification-level: new-verification-level,
+                endorsements: new-endorsements,
+                reports: (get reports current-trust),
+                last-updated: burn-block-height
+            }
+        )
+        true
+    )
+)
+
+;; Private: Calculate Verification Level
+(define-private (calculate-verification-level (trust-score uint) (endorsements uint))
+    (if (and (> trust-score u1000) (> endorsements u20)) TRUST-LEVEL-EXPERT
+        (if (and (> trust-score u500) (> endorsements u10)) TRUST-LEVEL-TRUSTED
+            (if (and (> trust-score u200) (> endorsements u5)) TRUST-LEVEL-VERIFIED
+                (if (> trust-score u100) TRUST-LEVEL-BASIC
+                    TRUST-LEVEL-UNVERIFIED
+                )
+            )
+        )
+    )
+)
+
+;; Public: Report User (for negative behavior)
+(define-public (report-user (reported principal) (reason (string-ascii 50)))
+    (begin
+        (asserts! (not (is-eq tx-sender reported)) ERR-INVALID-POINTS)
+        (asserts! (validate-string-input reason) ERR-INVALID-POINTS)
+        
+        (let (
+            (current-trust (default-to 
+                {
+                    trust-score: u100,
+                    verification-level: TRUST-LEVEL-UNVERIFIED,
+                    endorsements: u0,
+                    reports: u0,
+                    last-updated: u0
+                }
+                (map-get? UserTrustScores reported)
+            ))
+            (new-reports (+ (get reports current-trust) u1))
+            (penalty (if (> new-reports u5) u50 u10)) ;; Escalating penalties
+            (new-trust-score (if (> (get trust-score current-trust) penalty) 
+                                (- (get trust-score current-trust) penalty) 
+                                u0))
+        )
+            (map-set UserTrustScores reported
+                (merge current-trust {
+                    trust-score: new-trust-score,
+                    reports: new-reports,
+                    last-updated: burn-block-height
+                })
+            )
+            
+            (print { event: "user-reported", reporter: tx-sender, reported: reported, reason: reason })
+            (ok true)
+        )
+    )
+)
+
+;; Read-only: Get Trust Score
+(define-read-only (get-trust-score (user principal))
+    (map-get? UserTrustScores user)
+)
+
+;; Read-only: Get Endorsement
+(define-read-only (get-endorsement (endorser principal) (endorsed principal))
+    (map-get? UserEndorsements { endorser: endorser, endorsed: endorsed })
+)
