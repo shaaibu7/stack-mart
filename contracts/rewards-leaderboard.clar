@@ -3080,3 +3080,160 @@
         })
     )
 )
+;; ============================================================================
+;; INTEGRATION HELPERS AND UTILITIES
+;; ============================================================================
+
+;; Integration Status
+(define-map IntegrationStatus
+    (string-ascii 30) ;; integration-name
+    {
+        active: bool,
+        version: (string-ascii 10),
+        last-sync: uint,
+        total-syncs: uint,
+        error-count: uint
+    }
+)
+
+;; Batch Operations Support
+(define-map BatchOperations
+    uint ;; batch-id
+    {
+        operation-type: uint,
+        total-operations: uint,
+        completed-operations: uint,
+        started-block: uint,
+        status: uint ;; 0=pending, 1=processing, 2=completed, 3=failed
+    }
+)
+
+(define-data-var next-batch-id uint u1)
+
+;; Utility Functions
+(define-read-only (get-contract-version)
+    (ok {
+        version: "2.0.0",
+        features: (list "seasons" "guilds" "cross-contract" "analytics" "milestones" "pools" "api" "achievements" "security" "notifications" "leaderboards" "trust" "gamification"),
+        last-updated: burn-block-height
+    })
+)
+
+;; Public: Sync Integration Status
+(define-public (sync-integration-status 
+    (integration-name (string-ascii 30))
+    (version (string-ascii 10))
+    (success bool))
+    (let (
+        (current-status (default-to 
+            {
+                active: false,
+                version: "0.0.0",
+                last-sync: u0,
+                total-syncs: u0,
+                error-count: u0
+            }
+            (map-get? IntegrationStatus integration-name)
+        ))
+        (new-syncs (+ (get total-syncs current-status) u1))
+        (new-errors (if success (get error-count current-status) (+ (get error-count current-status) u1)))
+    )
+        (map-set IntegrationStatus integration-name
+            {
+                active: success,
+                version: version,
+                last-sync: burn-block-height,
+                total-syncs: new-syncs,
+                error-count: new-errors
+            }
+        )
+        
+        (print { event: "integration-sync", name: integration-name, success: success, version: version })
+        (ok true)
+    )
+)
+
+;; Admin: Start Batch Operation
+(define-public (start-batch-operation (operation-type uint) (total-operations uint))
+    (begin
+        (asserts! (is-admin tx-sender) ERR-NOT-AUTHORIZED)
+        (asserts! (> total-operations u0) ERR-INVALID-POINTS)
+        
+        (let ((batch-id (var-get next-batch-id)))
+            (map-set BatchOperations batch-id
+                {
+                    operation-type: operation-type,
+                    total-operations: total-operations,
+                    completed-operations: u0,
+                    started-block: burn-block-height,
+                    status: u1 ;; processing
+                }
+            )
+            (var-set next-batch-id (+ batch-id u1))
+            
+            (print { event: "batch-operation-started", batch-id: batch-id, type: operation-type })
+            (ok batch-id)
+        )
+    )
+)
+
+;; Read-only: Get Integration Status
+(define-read-only (get-integration-status (integration-name (string-ascii 30)))
+    (map-get? IntegrationStatus integration-name)
+)
+
+;; Read-only: Health Check
+(define-read-only (health-check)
+    (let (
+        (global-stats (get-global-stats))
+        (current-season (var-get current-season-id))
+        (total-guilds (- (var-get next-guild-id) u1))
+        (total-events (var-get next-event-id))
+    )
+        (ok {
+            status: "healthy",
+            total-users: (get total-users global-stats),
+            total-points: (get total-points-distributed global-stats),
+            active-season: current-season,
+            total-guilds: total-guilds,
+            total-events: total-events,
+            contract-paused: (var-get contract-paused),
+            timestamp: burn-block-height
+        })
+    )
+)
+
+;; Read-only: Get Feature Status
+(define-read-only (get-feature-status)
+    (ok {
+        seasonal-competitions: true,
+        guild-system: true,
+        cross-contract-integration: true,
+        advanced-analytics: (var-get analytics-enabled),
+        milestone-tracking: true,
+        dynamic-reward-pools: true,
+        enhanced-achievements: true,
+        security-features: true,
+        notification-system: true,
+        advanced-leaderboards: true,
+        reputation-system: true,
+        gamification: true
+    })
+)
+
+;; Emergency Functions
+(define-public (emergency-data-export)
+    (begin
+        (asserts! (is-admin tx-sender) ERR-NOT-AUTHORIZED)
+        (print {
+            event: "emergency-export",
+            global-stats: (get-global-stats),
+            current-season: (var-get current-season-id),
+            total-guilds: (var-get next-guild-id),
+            total-pools: (var-get next-pool-id),
+            total-milestones: (var-get next-milestone-id),
+            export-block: burn-block-height
+        })
+        (ok true)
+    )
+)
