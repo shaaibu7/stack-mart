@@ -1724,3 +1724,234 @@
         true
     )
 )
+;; ============================================================================
+;; DYNAMIC REWARD POOLS
+;; ============================================================================
+
+;; Reward Pool Management
+(define-map RewardPools
+    uint ;; pool-id
+    {
+        name: (string-ascii 30),
+        total-amount: uint,
+        distributed-amount: uint,
+        participation-threshold: uint,
+        distribution-rule: uint, ;; 0=equal, 1=proportional, 2=tiered
+        active: bool,
+        created-block: uint,
+        end-block: uint
+    }
+)
+
+;; Pool Participation Tracking
+(define-map PoolParticipants
+    { pool-id: uint, participant: principal }
+    {
+        contribution-score: uint,
+        reward-earned: uint,
+        claimed: bool
+    }
+)
+
+(define-map PoolStats
+    uint ;; pool-id
+    {
+        total-participants: uint,
+        total-contribution: uint,
+        avg-contribution: uint
+    }
+)
+
+(define-data-var next-pool-id uint u1)
+
+;; Distribution Rule Constants
+(define-constant DISTRIBUTION-EQUAL u0)
+(define-constant DISTRIBUTION-PROPORTIONAL u1)
+(define-constant DISTRIBUTION-TIERED u2)
+
+;; Admin: Create Reward Pool
+(define-public (create-reward-pool
+    (name (string-ascii 30))
+    (total-amount uint)
+    (participation-threshold uint)
+    (distribution-rule uint)
+    (duration-blocks uint))
+    (begin
+        (asserts! (is-admin tx-sender) ERR-NOT-AUTHORIZED)
+        (asserts! (> total-amount u0) ERR-INVALID-POINTS)
+        (asserts! (<= distribution-rule u2) ERR-INVALID-POINTS)
+        
+        (let ((pool-id (var-get next-pool-id)))
+            (map-set RewardPools pool-id
+                {
+                    name: name,
+                    total-amount: total-amount,
+                    distributed-amount: u0,
+                    participation-threshold: participation-threshold,
+                    distribution-rule: distribution-rule,
+                    active: true,
+                    created-block: burn-block-height,
+                    end-block: (+ burn-block-height duration-blocks)
+                }
+            )
+            
+            (map-set PoolStats pool-id
+                {
+                    total-participants: u0,
+                    total-contribution: u0,
+                    avg-contribution: u0
+                }
+            )
+            
+            (var-set next-pool-id (+ pool-id u1))
+            (print { event: "reward-pool-created", pool-id: pool-id, name: name, amount: total-amount })
+            (ok pool-id)
+        )
+    )
+)
+
+;; Public: Participate in Pool
+(define-public (participate-in-pool (pool-id uint) (contribution-score uint))
+    (let (
+        (pool-data (unwrap! (map-get? RewardPools pool-id) ERR-USER-NOT-FOUND))
+        (pool-stats (unwrap! (map-get? PoolStats pool-id) ERR-USER-NOT-FOUND))
+        (existing-participation (map-get? PoolParticipants { pool-id: pool-id, participant: tx-sender }))
+    )
+        (asserts! (get active pool-data) ERR-CONTRACT-PAUSED)
+        (asserts! (<= burn-block-height (get end-block pool-data)) ERR-COOLDOWN-ACTIVE)
+        (asserts! (>= contribution-score (get participation-threshold pool-data)) ERR-INVALID-POINTS)
+        
+        (match existing-participation
+            existing-data
+                ;; Update existing participation
+                (map-set PoolParticipants { pool-id: pool-id, participant: tx-sender }
+                    (merge existing-data { contribution-score: (+ (get contribution-score existing-data) contribution-score) })
+                )
+            ;; New participation
+            (begin
+                (map-set PoolParticipants { pool-id: pool-id, participant: tx-sender }
+                    {
+                        contribution-score: contribution-score,
+                        reward-earned: u0,
+                        claimed: false
+                    }
+                )
+                ;; Update pool stats
+                (map-set PoolStats pool-id
+                    (merge pool-stats { total-participants: (+ (get total-participants pool-stats) u1) })
+                )
+            )
+        )
+        
+        ;; Update total contribution
+        (let ((new-total-contribution (+ (get total-contribution pool-stats) contribution-score)))
+            (map-set PoolStats pool-id
+                (merge pool-stats { 
+                    total-contribution: new-total-contribution,
+                    avg-contribution: (/ new-total-contribution (get total-participants pool-stats))
+                })
+            )
+        )
+        
+        (print { event: "pool-participation", pool-id: pool-id, participant: tx-sender, contribution: contribution-score })
+        (ok true)
+    )
+)
+
+;; Admin: Distribute Pool Rewards
+(define-public (distribute-pool-rewards (pool-id uint))
+    (let (
+        (pool-data (unwrap! (map-get? RewardPools pool-id) ERR-USER-NOT-FOUND))
+        (pool-stats (unwrap! (map-get? PoolStats pool-id) ERR-USER-NOT-FOUND))
+    )
+        (asserts! (is-admin tx-sender) ERR-NOT-AUTHORIZED)
+        (asserts! (get active pool-data) ERR-CONTRACT-PAUSED)
+        (asserts! (> burn-block-height (get end-block pool-data)) ERR-COOLDOWN-ACTIVE)
+        
+        ;; Mark pool as inactive
+        (map-set RewardPools pool-id (merge pool-data { active: false }))
+        
+        (print { event: "pool-distribution-started", pool-id: pool-id, participants: (get total-participants pool-stats) })
+        (ok true)
+    )
+)
+
+;; Public: Claim Pool Reward
+(define-public (claim-pool-reward (pool-id uint))
+    (let (
+        (pool-data (unwrap! (map-get? RewardPools pool-id) ERR-USER-NOT-FOUND))
+        (participation-data (unwrap! (map-get? PoolParticipants { pool-id: pool-id, participant: tx-sender }) ERR-USER-NOT-FOUND))
+        (pool-stats (unwrap! (map-get? PoolStats pool-id) ERR-USER-NOT-FOUND))
+    )
+        (asserts! (not (get active pool-data)) ERR-CONTRACT-PAUSED) ;; Pool must be closed
+        (asserts! (not (get claimed participation-data)) ERR-COOLDOWN-ACTIVE)
+        
+        ;; Calculate reward based on distribution rule
+        (let (
+            (reward-amount (calculate-pool-reward 
+                pool-id 
+                (get contribution-score participation-data)
+                (get total-contribution pool-stats)
+                (get total-participants pool-stats)
+                (get distribution-rule pool-data)
+                (get total-amount pool-data)
+            ))
+        )
+            ;; Mark as claimed
+            (map-set PoolParticipants { pool-id: pool-id, participant: tx-sender }
+                (merge participation-data { 
+                    reward-earned: reward-amount,
+                    claimed: true 
+                })
+            )
+            
+            ;; Add to claimable rewards
+            (let ((current-claimable (default-to u0 (map-get? ClaimableRewards tx-sender))))
+                (map-set ClaimableRewards tx-sender (+ current-claimable reward-amount))
+            )
+            
+            (print { event: "pool-reward-claimed", pool-id: pool-id, participant: tx-sender, reward: reward-amount })
+            (ok reward-amount)
+        )
+    )
+)
+
+;; Private: Calculate Pool Reward
+(define-private (calculate-pool-reward 
+    (pool-id uint)
+    (user-contribution uint)
+    (total-contribution uint)
+    (total-participants uint)
+    (distribution-rule uint)
+    (total-pool uint))
+    (if (is-eq distribution-rule DISTRIBUTION-EQUAL)
+        ;; Equal distribution
+        (/ total-pool total-participants)
+        (if (is-eq distribution-rule DISTRIBUTION-PROPORTIONAL)
+            ;; Proportional to contribution
+            (/ (* total-pool user-contribution) total-contribution)
+            ;; Tiered distribution (simplified)
+            (let ((contribution-ratio (/ (* user-contribution u100) total-contribution)))
+                (if (> contribution-ratio u50) ;; Top 50% contributors
+                    (/ (* total-pool u60) u100) ;; Get 60% share
+                    (/ (* total-pool u40) u100) ;; Others get 40% share
+                )
+            )
+        )
+    )
+)
+
+;; Read-only: Get Pool Info
+(define-read-only (get-pool-info (pool-id uint))
+    (map-get? RewardPools pool-id)
+)
+
+;; Read-only: Get Pool Participation
+(define-read-only (get-pool-participation (pool-id uint) (participant principal))
+    (map-get? PoolParticipants { pool-id: pool-id, participant: participant })
+)
+
+;; Read-only: Get Pool Stats
+(define-read-only (get-pool-stats (pool-id uint))
+    (map-get? PoolStats pool-id)
+)
